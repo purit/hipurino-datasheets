@@ -1,28 +1,76 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HIPURINO Datasheets</title>
     <style>
-        body { font-family: sans-serif; background: #f9f9f9; margin: 0; padding: 2rem; }
-        h1 { color: #333; }
-        ul { padding: 0; }
-        li { list-style: none; margin: 1rem 0; }
-        a { text-decoration: none; color: #007bff; }
-        a:hover { text-decoration: underline; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background: #f4f4f4;
+            color: #333;
+        }
+        header {
+            background: #d62828;
+            color: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+        h1 {
+            margin: 0;
+        }
+        .container {
+            margin-top: 2rem;
+        }
+        .card {
+            background: white;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 1.25rem;
+        }
+        .card a {
+            text-decoration: none;
+            color: #007bff;
+        }
+        .card a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
-    <h1>📄 HIPURINO Datasheets</h1>
-    <p>รวมลิงก์ดาวน์โหลดเอกสารข้อมูลสินค้า (Datasheet)</p>
-    <ul>
-        <li><a href="#">🔌 Digital Power Meter - รุ่น PD-M3</a></li>
-        <li><a href="#">⚡ Surge Protection Device - รุ่น SPD-40KA</a></li>
-        <li><a href="#">🔀 Automatic Transfer Switch - รุ่น ATS-100A</a></li>
-        <li><a href="#">🧯 Safety Switch - รุ่น SS-125</a></li>
-        <li><a href="#">🌐 Energy Management System - รุ่น EM-Lite</a></li>
-    </ul>
+    <header>
+        <h1>📂 HIPURINO Datasheet Center</h1>
+        <p>รวมเอกสารแคตตาล็อกและคู่มือสินค้าสำหรับลูกค้า</p>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h2>🔌 Digital Power Meter - รุ่น DM400</h2>
+            <a href="DM400.pdf" target="_blank">📄 ดาวน์โหลด PDF</a>
+        </div>
+
+        <div class="card">
+            <h2>⚡ SPD Type 1+2 - รุ่น 900368</h2>
+            <a href="900368.pdf" target="_blank">📄 ดาวน์โหลด PDF</a>
+        </div>
+
+        <div class="card">
+            <h2>🔀 ATS 250A - รุ่น HAT3200</h2>
+            <a href="HAT3200.pdf" target="_blank">📄 ดาวน์โหลด PDF</a>
+        </div>
+
+        <div class="card">
+            <h2>🧯 Safety Switch - รุ่น SS125</h2>
+            <a href="SS125.pdf" target="_blank">📄 ดาวน์โหลด PDF</a>
+        </div>
+    </div>
 </body>
 </html>
