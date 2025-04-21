@@ -1,12 +1,12 @@
-from flask import Flask, request, abort
-from linebot.v3 import WebhookHandler
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
 import os
 import requests
 import json
 import PyPDF2
 from io import BytesIO
+from flask import Flask, request, jsonify, abort
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextSendMessage
 
 # --- การตั้งค่าคีย์สำคัญจาก Environment Variables ---
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -31,14 +31,12 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-flag-2100-en-po.pdf",
 ]
 
-# --- Initializing Flask App และ LINE Bot SDK ---
 app = Flask(__name__)
-configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-api_client = ApiClient(configuration)
-messaging_api = MessagingApi(api_client)
+
+# --- Setup Line API ---
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# --- ฟังก์ชันสำหรับอ่านข้อความจากไฟล์ PDF ---
 def read_pdfs_from_urls(pdf_urls):
     all_text = ""
     for url in pdf_urls:
@@ -57,7 +55,6 @@ def read_pdfs_from_urls(pdf_urls):
             print(f"ข้อผิดพลาดที่ไม่คาดคิดในการประมวลผล PDF จาก {url}: {e}")
     return all_text.strip()
 
-# --- ฟังก์ชันสำหรับส่งคำถามไปยัง OpenRouter ---
 def query_openrouter(question, context):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -91,34 +88,31 @@ def query_openrouter(question, context):
         print(f"OpenRouter error (JSON Decode): {e}")
         return "ขออภัย มีปัญหาในการประมวลผลข้อมูลจาก OpenRouter"
 
-# --- Endpoint สำหรับรับ Webhook จาก LINE ---
+@app.route("/")
+def home():
+    return "Server is running!"
+
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
-    except Exception as e:
-        print("Parse error:", e)
+    except InvalidSignatureError:
         abort(400)
 
     return 'OK'
 
-# --- ฟังก์ชันสำหรับจัดการ Message Event ---
-@handler.add(MessageEvent, message=TextMessageContent)
+@handler.add(MessageEvent, message=TextSendMessage)
 def handle_message(event):
     user_message = event.message.text
-    user_id = event.source.user_id
-    pdf_text = read_pdfs_from_urls(PDF_URLS)
-    ai_reply = query_openrouter(user_message, pdf_text)
-
-    messaging_api.reply_message(
-        ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[TextMessage(text=ai_reply)]
-        )
+    context = read_pdfs_from_urls(PDF_URLS)
+    response_text = query_openrouter(user_message, context)
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=response_text)
     )
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(port=int(os.environ.get("PORT", 5000)))
