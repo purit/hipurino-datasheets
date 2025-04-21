@@ -1,3 +1,4 @@
 Flask
 requests
 PyPDF2
+line-bot-sdk
