@@ -1,0 +1,10 @@
+{
+  "builds": [
+    { "src": "app.py", "use": "@vercel/python" }
+  ],
+  "routes": [
+    { "src": "/callback", "dest": "app.py" },
+    { "src": "/", "dest": "app.py" }
+  ],
+  "python": { "version": "3.9" }
+}
