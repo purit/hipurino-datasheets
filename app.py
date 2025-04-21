@@ -5,18 +5,15 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 import os
 import requests
 import json
-import re
 import PyPDF2
 from io import BytesIO
 
-# LINE Credentials - อ่านจาก Environment Variables
+# --- การตั้งค่าคีย์สำคัญจาก Environment Variables ---
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-
-# OpenRouter API - อ่านจาก Environment Variables
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
-# PDF URL List on GitHub
+# --- รายการ URL ของไฟล์ PDF บน GitHub ---
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90045.pdf",
@@ -34,19 +31,20 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-flag-2100-en-po.pdf",
 ]
 
-# Init App
+# --- Initializing Flask App และ LINE Bot SDK ---
 app = Flask(__name__)
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
+# --- ฟังก์ชันสำหรับอ่านข้อความจากไฟล์ PDF ---
 def read_pdfs_from_urls(pdf_urls):
     all_text = ""
     for url in pdf_urls:
         try:
             response = requests.get(url)
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status()
             with BytesIO(response.content) as pdf_file:
                 reader = PyPDF2.PdfReader(pdf_file)
                 for page in reader.pages:
@@ -59,6 +57,7 @@ def read_pdfs_from_urls(pdf_urls):
             print(f"ข้อผิดพลาดที่ไม่คาดคิดในการประมวลผล PDF จาก {url}: {e}")
     return all_text.strip()
 
+# --- ฟังก์ชันสำหรับส่งคำถามไปยัง OpenRouter ---
 def query_openrouter(question, context):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -92,6 +91,7 @@ def query_openrouter(question, context):
         print(f"OpenRouter error (JSON Decode): {e}")
         return "ขออภัย มีปัญหาในการประมวลผลข้อมูลจาก OpenRouter"
 
+# --- Endpoint สำหรับรับ Webhook จาก LINE ---
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -105,6 +105,7 @@ def callback():
 
     return 'OK'
 
+# --- ฟังก์ชันสำหรับจัดการ Message Event ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_message = event.message.text
