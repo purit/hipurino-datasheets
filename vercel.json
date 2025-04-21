@@ -5,6 +5,5 @@
   "routes": [
     { "src": "/callback", "dest": "app.py" },
     { "src": "/", "dest": "app.py" }
-  ],
-  "runtime": "python3.10"
+  ]
 }
