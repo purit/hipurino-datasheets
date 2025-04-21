@@ -9,13 +9,11 @@ import re
 import PyPDF2
 from io import BytesIO
 
-import os
-
-# LINE Credentials
+# LINE Credentials - อ่านจาก Environment Variables
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-# OpenRouter API
+# OpenRouter API - อ่านจาก Environment Variables
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
 # PDF URL List on GitHub
@@ -34,7 +32,6 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/DSNY RED BOOK_2015_e_complete.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-ec575-en.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-flag-2100-en-po.pdf",
-    # เพิ่ม URL ของไฟล์ PDF อื่นๆ ที่นี่
 ]
 
 # Init App
