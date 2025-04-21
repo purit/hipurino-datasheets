@@ -106,13 +106,18 @@ def callback():
 
 @handler.add(MessageEvent, message=TextSendMessage)
 def handle_message(event):
+    print(">>> handle_message ถูกเรียกใช้งาน")
     user_message = event.message.text
+    print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}")
     context = read_pdfs_from_urls(PDF_URLS)
+    print(">>> อ่าน PDF เสร็จสิ้น")
     response_text = query_openrouter(user_message, context)
+    print(f">>> ได้รับคำตอบจาก OpenRouter: {response_text}")
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=response_text)
     )
+    print(">>> ส่งข้อความตอบกลับไปยัง LINE")
 
 if __name__ == "__main__":
     app.run(port=int(os.environ.get("PORT", 5000)))
