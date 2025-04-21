@@ -6,5 +6,5 @@
     { "src": "/callback", "dest": "app.py" },
     { "src": "/", "dest": "app.py" }
   ],
-  "runtime": "python3.9"
+  "runtime": "python3.10"
 }
