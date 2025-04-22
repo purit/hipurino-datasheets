@@ -39,7 +39,7 @@ def query_openrouter(question, context):
     }
     prompt = f"จากข้อมูลสินค้าต่อไปนี้: {context}\n\nตอบคำถามเกี่ยวกับสินค้าของผู้ใช้เป็นภาษาไทยให้สั้นและกระชับที่สุดโดยอิงจากข้อมูลเท่านั้น: {question}"
     data = {
-        "model": "google/gemini-flash-1.5-8b-exp",  # เปลี่ยนเป็น Gemini Flash
+        "model": "google/gemini-flash-1.5-8b-exp",  # ใช้ Gemini Flash
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -97,7 +97,7 @@ async def get_relevant_products(query, top_k=3):
         return []
 
 @handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event):
+async def handle_message(event):
     print(">>> handle_message ถูกเรียกใช้งาน")
     user_message = event.message.text
     user_id = event.source.user_id
@@ -105,22 +105,18 @@ def handle_message(event):
 
     best_reply = "ขออภัย ไม่พบข้อมูลสินค้าที่เกี่ยวข้อง"
 
-    async def query_products_and_reply():
-        relevant_products = await get_relevant_products(user_message)
-        if relevant_products:
-            context = "\n".join([f"ชื่อสินค้า: {p['name']}\nรายละเอียด: {p['description']}\nข้อมูลจำเพาะ: {p['specifications']}\n---" for p in relevant_products])
-            ai_reply = query_openrouter(user_message, context)
-            if ai_reply and "ขออภัย" not in ai_reply:
-                return ai_reply
-        return best_reply
-
-    reply_text = asyncio.run(query_products_and_reply())
+    relevant_products = await get_relevant_products(user_message)
+    if relevant_products:
+        context = "\n".join([f"ชื่อสินค้า: {p['name']}\nรายละเอียด: {p['description']}\nข้อมูลจำเพาะ: {p['specifications']}\n---" for p in relevant_products])
+        ai_reply = query_openrouter(user_message, context)
+        if ai_reply and "ขออภัย" not in ai_reply:
+            best_reply = ai_reply
 
     try:
-        messaging_api.reply_message(
+        await messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=reply_text)]
+                messages=[TextMessage(text=best_reply)]
             )
         )
         print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
