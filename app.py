@@ -14,11 +14,11 @@ import re
 # Init App
 app = Flask(__name__)
 
-# LINE Credentials (ควรตั้งค่าใน Environment Variables)
+# LINE Credentials (ควรตั้งค่าใน Environment Variables บน Render)
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-# OpenRouter API (ควรตั้งค่าใน Environment Variables)
+# OpenRouter API (ควรตั้งค่าใน Environment Variables บน Render)
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
 # GitHub URL ของไฟล์ all_products.txt
@@ -35,6 +35,13 @@ api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 model = SentenceTransformer(EMBEDDING_MODEL)
+
+# Dictionary สำหรับเก็บ Index ที่โหลดแล้ว (เพื่อไม่ให้โหลดซ้ำ)
+loaded_indices = {}
+# Dictionary เพื่อติดตามว่า Index ของ Product ใดถูกสร้างแล้ว
+indices_created = {}
+# เก็บข้อมูล Product ทั้งหมดใน Memory ชั่วคราว
+all_products_data = []
 
 def read_organized_text_from_github(url, product_start_marker, product_end_marker):
     products_data = []
@@ -68,7 +75,7 @@ def create_faiss_index_for_product(product_name, product_info):
     embedding = model.encode([text_to_embed])
     d = embedding.shape[1]
     index = faiss.IndexFlatL2(d)
-    index.add(embedding)
+    index.add(embedding.reshape(1, -1)) # Reshape ให้เป็น Matrix (1 x d)
 
     os.makedirs(INDEX_DIR, exist_ok=True)
     index_file = os.path.join(INDEX_DIR, f"{product_name.replace(' ', '_')}.faiss")
@@ -91,10 +98,18 @@ def load_faiss_index_for_product(product_name):
         return index, metadata
     return None, None
 
+def get_faiss_index_and_metadata(product_name):
+    if product_name not in loaded_indices:
+        index, metadata = load_faiss_index_for_product(product_name)
+        if index:
+            loaded_indices[product_name] = (index, metadata)
+        return index, metadata
+    return loaded_indices[product_name]
+
 def search_faiss(query, product_name):
-    index, metadata = load_faiss_index_for_product(product_name)
+    index, metadata = get_faiss_index_and_metadata(product_name)
     if index is None:
-        print(f">>> ไม่พบ FAISS Index สำหรับ {product_name}")
+        print(f">>> ไม่พบ/โหลด FAISS Index สำหรับ {product_name}")
         return []
     query_embedding = model.encode([query])
     D, I = index.search(np.array(query_embedding), K_SEARCH)
@@ -142,13 +157,21 @@ def handle_message(event):
     print(f">>> ผู้ใช้ส่งข้อความ: {user_message}")
 
     relevant_product = None
-    products_data = read_organized_text_from_github(TEXT_FILE_URL, "==== PRODUCT:", "==== END_PRODUCT ====")
-    for product in products_data:
+    global all_products_data
+    if not all_products_data:
+        all_products_data = read_organized_text_from_github(TEXT_FILE_URL, "==== PRODUCT:", "==== END_PRODUCT ====")
+
+    for product in all_products_data:
         if product.get('PRODUCT') and re.search(re.escape(user_message), product['PRODUCT'], re.IGNORECASE):
             relevant_product = product['PRODUCT']
+            current_product_data = product
             break
 
     if relevant_product:
+        if relevant_product not in indices_created:
+            create_faiss_index_for_product(relevant_product, current_product_data)
+            indices_created[relevant_product] = True
+
         search_results = search_faiss(user_message, relevant_product)
         if search_results:
             context = search_results[0][1].get('Description', '')
@@ -184,7 +207,6 @@ if __name__ == "__main__":
     print(f">>> Starting app on port: {port}")
     os.makedirs(INDEX_DIR, exist_ok=True)
     os.makedirs(TEXTS_DIR, exist_ok=True)
-    products = read_organized_text_from_github(TEXT_FILE_URL, "==== PRODUCT:", "==== END_PRODUCT ====")
-    for product in products:
-        create_faiss_index_for_product(product['PRODUCT'], product)
+    # โหลดข้อมูล Product ทั้งหมดเมื่อเริ่มต้น แต่ยังไม่สร้าง Index
+    all_products_data = read_organized_text_from_github(TEXT_FILE_URL, "==== PRODUCT:", "==== END_PRODUCT ====")
     app.run(host='0.0.0.0', port=port)
