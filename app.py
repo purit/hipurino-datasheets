@@ -1,19 +1,22 @@
 import os
 import requests
 import json
+import re
 import PyPDF2
-from io import BytesIO
-from flask import Flask, request, jsonify, abort
-from linebot import LineBotApi, WebhookHandler
+from flask import Flask, request, abort
+from linebot.v3 import WebhookHandler
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextSendMessage
 
-# --- การตั้งค่าคีย์สำคัญจาก Environment Variables ---
+# LINE Credentials
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+
+# OpenRouter API
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
-# --- รายการ URL ของไฟล์ PDF บน GitHub ---
+# PDF URLs
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90045.pdf",
@@ -31,10 +34,11 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-flag-2100-en-po.pdf",
 ]
 
+# Init App
 app = Flask(__name__)
-
-# --- Setup Line API ---
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+api_client = ApiClient(configuration)
+messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
 def read_pdfs_from_urls(pdf_urls):
@@ -44,13 +48,13 @@ def read_pdfs_from_urls(pdf_urls):
             print(f">>> กำลังดาวน์โหลด PDF จาก: {url}")
             response = requests.get(url)
             response.raise_for_status()
-            with BytesIO(response.content) as pdf_file:
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                pdf_file = BytesIO(r.content)
                 reader = PyPDF2.PdfReader(pdf_file)
-                text_from_pdf = ""
                 for page in reader.pages:
-                    text_from_pdf += page.extract_text() + "\n"
-                all_text += text_from_pdf
-                print(f">>> อ่าน PDF จาก {url} เสร็จสิ้น")
+                    all_text += page.extract_text() + "\n"
+            print(f">>> อ่าน PDF จาก {url} เสร็จสิ้น")
         except requests.exceptions.RequestException as e:
             print(f"เกิดข้อผิดพลาดในการดาวน์โหลด PDF จาก {url}: {e}")
         except PyPDF2.errors.PdfReadError as e:
@@ -92,46 +96,49 @@ def query_openrouter(question, context):
         print(f"OpenRouter error (JSON Decode): {e}")
         return "ขออภัย มีปัญหาในการประมวลผลข้อมูลจาก OpenRouter"
 
-@app.route("/")
-def home():
-    return "Server is running!"
-
 @app.route("/callback", methods=['POST'])
 def callback():
-    print(">>> /callback ถูกเรียกใช้งาน")
-    print(f">>> CHANNEL_SECRET จาก env ใน callback: {os.environ.get('LINE_CHANNEL_SECRET')}")
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+    print(">>> /callback ถูกเรียกใช้งาน")
     print(f">>> Body ที่ได้รับ: {body}")
     print(f">>> Signature ที่ได้รับ: {signature}")
+    print(f">>> CHANNEL_SECRET จาก env ใน callback: {os.environ.get('LINE_CHANNEL_SECRET')}")
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         print(">>> InvalidSignatureError เกิดขึ้น!")
         abort(400)
+    except Exception as e:
+        print(f">>> ข้อผิดพลาดในการ Handle Webhook: {e}")
+        abort(400)
 
     return 'OK'
 
-@handler.add(MessageEvent)
-def handle_any_message(event):
-    print(f">>> ได้รับ Message Event ประเภท: {event.type}")
-    if isinstance(event.message, TextSendMessage):
-        print(">>> เป็น Text Message!")
-        user_message = event.message.text
-        print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}")
-        context = read_pdfs_from_urls(PDF_URLS)
-        print(">>> อ่าน PDF เสร็จสิ้น")
-        response_text = query_openrouter(user_message, context)
-        print(f">>> ได้รับคำตอบจาก OpenRouter: {response_text}")
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=response_text)
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event):
+    print(">>> handle_message ถูกเรียกใช้งาน")
+    user_message = event.message.text
+    user_id = event.source.user_id
+    print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
+    pdf_text = read_pdfs_from_urls(PDF_URLS)
+    print(">>> อ่าน PDF เสร็จสิ้น")
+    ai_reply = query_openrouter(user_message, pdf_text)
+    print(f">>> คำตอบจาก OpenRouter: {ai_reply}")
+
+    try:
+        messaging_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=ai_reply)]
             )
-            print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
-        except Exception as e:
-            print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
+        )
+        print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
+    except Exception as e:
+        print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
 
 if __name__ == "__main__":
-    app.run(port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    print(f">>> Starting app on port: {port}")
+    app.run(host='0.0.0.0', port=port)
