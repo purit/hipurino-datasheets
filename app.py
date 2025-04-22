@@ -85,7 +85,7 @@ async def get_relevant_products(query, top_k=3):
     query_embedding = model.encode(query).tolist()
     try:
         response = await supabase.rpc(
-            'match_content',  # ใช้ Function ใหม่ที่ทำงานกับ pdf_embeddings
+            'match_content',  # ใช้ Function ที่ค้นหาใน pdf_embeddings
             {'query_embedding': query_embedding, 'match_count': top_k}
         ).execute()
         if response.error:
