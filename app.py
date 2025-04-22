@@ -8,6 +8,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
+import asyncio
 
 # Init App (ประกาศ app ก่อนใช้งาน)
 app = Flask(__name__)
@@ -65,14 +66,14 @@ def query_openrouter(question, context):
         return "ขออภัย มีปัญหาในการประมวลผลข้อมูลจาก OpenRouter"
 
 @app.route("/callback", methods=['POST'])
-def callback():
+async def callback():  # เปลี่ยนเป็น async def
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
     print(">>> /callback ถูกเรียกใช้งาน")
     print(f">>> Body ที่ได้รับ: {body}")
     print(f">>> Signature ที่ได้รับ: {signature}")
     try:
-        handler.handle(body, signature)
+        await handler.async_handle(body, signature)  # ใช้ await handler.async_handle
     except InvalidSignatureError:
         print(">>> InvalidSignatureError เกิดขึ้น!")
         abort(400)
