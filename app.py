@@ -85,11 +85,11 @@ async def get_relevant_products(query, top_k=3):
     query_embedding = model.encode(query).tolist()
     try:
         response = await supabase.rpc(
-            'match_products',  # ชื่อ Function ที่เราสร้างใน Supabase สำหรับสินค้า
+            'match_content',  # ใช้ Function ใหม่ที่ทำงานกับ pdf_embeddings
             {'query_embedding': query_embedding, 'match_count': top_k}
         ).execute()
         if response.error:
-            print(f"Error from Supabase function (match_products): {response.error}")
+            print(f"Error from Supabase function (match_content): {response.error}")
             return []
         return response.data
     except Exception as e:
@@ -105,9 +105,9 @@ async def handle_message(event):
 
     best_reply = "ขออภัย ไม่พบข้อมูลสินค้าที่เกี่ยวข้อง"
 
-    relevant_products = await get_relevant_products(user_message)
-    if relevant_products:
-        context = "\n".join([f"ชื่อสินค้า: {p['name']}\nรายละเอียด: {p['description']}\nข้อมูลจำเพาะ: {p['specifications']}\n---" for p in relevant_products])
+    relevant_items = await get_relevant_products(user_message)
+    if relevant_items:
+        context = "\n---\n".join([f"ข้อมูลสินค้า: {item['content']}" for item in relevant_items])
         ai_reply = query_openrouter(user_message, context)
         if ai_reply and "ขออภัย" not in ai_reply:
             best_reply = ai_reply
