@@ -41,12 +41,16 @@ def read_pdfs_from_urls(pdf_urls):
     all_text = ""
     for url in pdf_urls:
         try:
+            print(f">>> กำลังดาวน์โหลด PDF จาก: {url}")
             response = requests.get(url)
             response.raise_for_status()
             with BytesIO(response.content) as pdf_file:
                 reader = PyPDF2.PdfReader(pdf_file)
+                text_from_pdf = ""
                 for page in reader.pages:
-                    all_text += page.extract_text() + "\n"
+                    text_from_pdf += page.extract_text() + "\n"
+                all_text += text_from_pdf
+                print(f">>> อ่าน PDF จาก {url} เสร็จสิ้น")
         except requests.exceptions.RequestException as e:
             print(f"เกิดข้อผิดพลาดในการดาวน์โหลด PDF จาก {url}: {e}")
         except PyPDF2.errors.PdfReadError as e:
@@ -94,12 +98,14 @@ def home():
 
 @app.route("/callback", methods=['POST'])
 def callback():
+    print(">>> /callback ถูกเรียกใช้งาน")
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print(">>> InvalidSignatureError เกิดขึ้น!")
         abort(400)
 
     return 'OK'
@@ -113,11 +119,14 @@ def handle_message(event):
     print(">>> อ่าน PDF เสร็จสิ้น")
     response_text = query_openrouter(user_message, context)
     print(f">>> ได้รับคำตอบจาก OpenRouter: {response_text}")
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=response_text)
-    )
-    print(">>> ส่งข้อความตอบกลับไปยัง LINE")
+    try:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=response_text)
+        )
+        print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
+    except Exception as e:
+        print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
 
 if __name__ == "__main__":
     app.run(port=int(os.environ.get("PORT", 5000)))
