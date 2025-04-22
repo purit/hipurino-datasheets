@@ -62,7 +62,7 @@ def query_openrouter(question, context):
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    prompt = f"จากข้อมูลนี้: {context}\n\nตอบคำถามต่อไปนี้ให้สั้นและกระชับที่สุด: {question}"
+    prompt = f"จากข้อมูลนี้: {context}\n\nตอบคำถามต่อไปนี้เป็นภาษาไทยให้สั้นและกระชับที่สุด: {question}"
     data = {
         "model": "deepseek/deepseek-r1:free",
         "messages": [
@@ -71,7 +71,6 @@ def query_openrouter(question, context):
         "max_tokens": 150,  # กำหนดจำนวน Tokens สูงสุดของคำตอบ
         "temperature": 0.2  # กำหนดค่า Temperature ให้ต่ำลง เพื่อลดความสร้างสรรค์
     }
-    print(f"OpenRouter Request Headers: {headers}")
     print(f"OpenRouter Request Body: {json.dumps(data, ensure_ascii=False)}")
 
     try:
@@ -100,7 +99,6 @@ def callback():
     print(">>> /callback ถูกเรียกใช้งาน")
     print(f">>> Body ที่ได้รับ: {body}")
     print(f">>> Signature ที่ได้รับ: {signature}")
-    print(f">>> CHANNEL_SECRET จาก env ใน callback: {os.environ.get('LINE_CHANNEL_SECRET')}")
 
     try:
         handler.handle(body, signature)
