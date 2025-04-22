@@ -8,6 +8,7 @@ from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
+from io import BytesIO
 
 # LINE Credentials
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
