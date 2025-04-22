@@ -8,10 +8,13 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMe
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
 from io import BytesIO
+from sentence_transformers import SentenceTransformer
+import faiss
 from urllib.parse import urlparse
+import numpy as np
 import re
 
-# Init App (ประกาศ app ก่อนใช้งาน)
+# Init App
 app = Flask(__name__)
 
 # LINE Credentials
@@ -36,15 +39,24 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
 ]
 
+# FAISS Indexing
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+INDEX_FILE = "pdf_index.faiss"
+TEXTS_FILE = "pdf_texts.json"
+K_SEARCH = 3  # จำนวนผลลัพธ์ที่ต้องการจาก FAISS
+
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
+model = SentenceTransformer(EMBEDDING_MODEL)
+faiss_index = None
+pdf_texts = []
 
 def get_filename_from_url(url):
     return os.path.basename(urlparse(url).path)
 
-def read_pdf_from_url(url):
+def download_and_extract_text(url):
     all_text = ""
     try:
         print(f">>> กำลังดาวน์โหลด PDF จาก: {url}")
@@ -62,6 +74,42 @@ def read_pdf_from_url(url):
     except Exception as e:
         print(f"ข้อผิดพลาดที่ไม่คาดคิดในการประมวลผล PDF จาก {url}: {e}")
     return all_text.strip()
+
+def create_faiss_index(pdf_urls):
+    global faiss_index, pdf_texts
+    texts = []
+    for url in pdf_urls:
+        text = download_and_extract_text(url)
+        texts.append(text)
+    pdf_texts = texts
+    with open(TEXTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(pdf_texts, f, ensure_ascii=False)
+
+    embeddings = model.encode(texts)
+    d = embeddings.shape[1]
+    faiss_index = faiss.IndexFlatL2(d)
+    faiss_index.add(embeddings)
+    faiss.write_index(faiss_index, INDEX_FILE)
+    print(">>> สร้าง FAISS Index เสร็จสิ้น")
+
+def load_faiss_index():
+    global faiss_index, pdf_texts
+    if os.path.exists(INDEX_FILE) and os.path.exists(TEXTS_FILE):
+        faiss_index = faiss.read_index(INDEX_FILE)
+        with open(TEXTS_FILE, 'r', encoding='utf-8') as f:
+            pdf_texts = json.load(f)
+        print(">>> โหลด FAISS Index และ Texts จากไฟล์")
+        return True
+    return False
+
+def search_faiss(query, k=K_SEARCH):
+    if faiss_index is None:
+        print(">>> FAISS Index ยังไม่ถูกโหลด")
+        return []
+    query_embedding = model.encode([query])
+    D, I = faiss_index.search(np.array(query_embedding), k)
+    results = [(I[0][i], pdf_texts[I[0][i]]) for i in range(len(I[0]))]
+    return results
 
 def query_openrouter(question, context):
     headers = {
@@ -124,47 +172,92 @@ def handle_message(event):
     user_id = event.source.user_id
     print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
 
+    if faiss_index is None:
+        print(">>> กำลังสร้าง/โหลด FAISS Index...")
+        if not load_faiss_index():
+            create_faiss_index(PDF_URLS)
+
     relevant_pdf_text = None
-    best_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
-    found_relevant_pdf = False
+    found_relevant_pdf_by_name = False
 
     # ลองหาไฟล์ PDF ที่มีชื่อเกี่ยวข้องกับคำถาม (เช่น หมายเลข Part)
     for url in PDF_URLS:
         filename = get_filename_from_url(url)
         if re.search(re.escape(user_message), filename, re.IGNORECASE):
-            relevant_pdf_text = read_pdf_from_url(url)
-            found_relevant_pdf = True
+            relevant_pdf_text = download_and_extract_text(url)
+            found_relevant_pdf_by_name = True
             break
 
-    # หากไม่พบจากชื่อไฟล์ ลองอ่านเนื้อหาบางส่วนของแต่ละไฟล์เพื่อหาความเกี่ยวข้อง (วิธีนี้อาจใช้ Memory มากขึ้น)
-    if not found_relevant_pdf:
-        for url in PDF_URLS:
-            pdf_text = read_pdf_from_url(url)
-            if re.search(re.escape(user_message), pdf_text[:500], re.IGNORECASE): # อ่านแค่ 500 ตัวอักษรแรก
-                relevant_pdf_text = pdf_text
-                found_relevant_pdf = True
-                break
-        # หากยังไม่พบความเกี่ยวข้องใดๆ ให้อ่านไฟล์แรก (หรืออาจจะข้ามไปเลยก็ได้)
-        if not found_relevant_pdf and PDF_URLS:
-            relevant_pdf_text = read_pdf_from_url(PDF_URLS[0])
+    if found_relevant_pdf_by_name and relevant_pdf_text:
+        search_results = search_faiss(user_message, k=K_SEARCH)
+        if search_results:
+            # กรองผลลัพธ์ FAISS ที่มาจาก PDF ที่เราพบจากชื่อไฟล์ (ถ้าต้องการ)
+            # ในตัวอย่างนี้เราจะใช้ผลลัพธ์ทั้งหมดที่ FAISS หาเจอ
+            context = "\n".join([text for index, text in search_results])
+            ai_reply = query_openrouter(user_message, context)
+            if ai_reply and "ขออภัย" not in ai_reply:
+                try:
+                    messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=ai_reply)]
+                        )
+                    )
+                    print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ (FAISS + ชื่อไฟล์)")
+                except Exception as e:
+                    print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ (FAISS + ชื่อไฟล์): {e}")
+                return
+        else:
+            print(">>> ไม่พบข้อมูลที่เกี่ยวข้องจาก FAISS ในไฟล์ที่ชื่อตรงกัน")
+            # Fallback: อาจจะใช้เนื้อหาทั้งหมดของไฟล์ที่ชื่อตรงกัน หรือตอบว่าไม่พบ
+            ai_reply = query_openrouter(user_message, relevant_pdf_text)
+            if ai_reply and "ขออภัย" not in ai_reply:
+                try:
+                    messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=ai_reply)]
+                        )
+                    )
+                    print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ (ชื่อไฟล์)")
+                except Exception as e:
+                    print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ (ชื่อไฟล์): {e}")
+                return
 
-    if relevant_pdf_text:
-        ai_reply = query_openrouter(user_message, relevant_pdf_text)
+    # หากไม่พบไฟล์ที่ชื่อตรงกัน หรือไม่มีผลลัพธ์จาก FAISS
+    search_results = search_faiss(user_message)
+    if search_results:
+        context = "\n".join([text for index, text in search_results])
+        ai_reply = query_openrouter(user_message, context)
         if ai_reply and "ขออภัย" not in ai_reply:
-            best_reply = ai_reply
+            try:
+                messaging_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=ai_reply)]
+                    )
+                )
+                print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ (FAISS ทั่วไป)")
+            except Exception as e:
+                print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ (FAISS ทั่วไป): {e}")
+            return
 
+    # Fallback สุดท้าย
+    ai_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
     try:
         messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=best_reply)]
+                messages=[TextMessage(text=ai_reply)]
             )
         )
-        print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
+        print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ (Fallback)")
     except Exception as e:
-        print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
+        print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ (Fallback): {e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     print(f">>> Starting app on port: {port}")
+    if not load_faiss_index():
+        create_faiss_index(PDF_URLS)
     app.run(host='0.0.0.0', port=port)
