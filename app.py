@@ -47,14 +47,14 @@ def query_openrouter(question, context):
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    prompt = f"จากข้อมูลนี้: {context}\n\nตอบคำถามต่อไปนี้เป็นภาษาไทยให้สั้นและกระชับที่สุด: {question}"
+    prompt = f"คุณคือผู้ช่วยในการนำเสนอสินค้าและที่ปรึกษาทางด้านเทคนิค จากข้อมูลสินค้าต่อไปนี้:\n\n{context}\n\nตอบคำถามของผู้ใช้ต่อไปนี้เป็นภาษาไทยให้ละเอียด เป็นประโยชน์ และอยู่ในบทบาทของผู้เชี่ยวชาญ:\n\n{question}"
     data = {
         "model": "deepseek/deepseek-r1:free",
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 150,  # กำหนดจำนวน Tokens สูงสุดของคำตอบ
-        "temperature": 0.2  # กำหนดค่า Temperature ให้ต่ำลง เพื่อลดความสร้างสรรค์
+        "max_tokens": 250,  # เพิ่มจำนวน Tokens สูงสุด
+        "temperature": 0.4  # เพิ่ม Temperature เล็กน้อย
     }
     print(f"OpenRouter Request Body: {json.dumps(data, ensure_ascii=False)}")
 
@@ -65,7 +65,7 @@ def query_openrouter(question, context):
         print(f"OpenRouter Response: {response_json}")
 
         if 'choices' in response_json and response_json['choices'] and 'message' in response_json['choices'][0]:
-            return response_json['choices'][0]['message']['content'].strip() # เพิ่ม .strip() เพื่อลบ Whitespace หน้าหลัง
+            return response_json['choices'][0]['message']['content'].strip()
         else:
             print("OpenRouter Response ไม่ถูกต้อง:", response_json)
             return "ขออภัย ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ (OpenRouter response error)"
@@ -103,11 +103,11 @@ def handle_message(event):
     user_id = event.source.user_id
     print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
 
-    best_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
+    best_reply = "สวัสดีครับ/ค่ะ มีอะไรให้ผมช่วยนำเสนอสินค้าหรือให้คำแนะนำทางเทคนิคเกี่ยวกับผลิตภัณฑ์ของเราไหมครับ?"
     found_relevant_info = False
 
     product_data_raw = read_json_from_url(JSON_URL)
-    print(f">>> ข้อมูล JSON ที่อ่านได้: {product_data_raw}") # แสดงข้อมูลดิบ
+    print(f">>> ข้อมูล JSON ที่อ่านได้: {product_data_raw}")
 
     if product_data_raw and "products" in product_data_raw and isinstance(product_data_raw["products"], list):
         product_list = product_data_raw["products"]
@@ -115,7 +115,10 @@ def handle_message(event):
         for product in product_list:
             product_name = product.get("name", "ไม่มีชื่อ")
             description = product.get("description", "ไม่มีรายละเอียด")
-            context_list.append(f"ชื่อสินค้า: {product_name}, รายละเอียด: {description}")
+            specifications = product.get("specifications", {})
+            spec_text = "\n".join([f"{key}: {value}" for key, value in specifications.items()])
+
+            context_list.append(f"ชื่อสินค้า: {product_name}\nรายละเอียด: {description}\nข้อมูลจำเพาะ:\n{spec_text}\n---")
 
         context = "\n".join(context_list)
         if context:
