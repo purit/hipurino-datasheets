@@ -11,7 +11,35 @@ from io import BytesIO
 from urllib.parse import urlparse
 import re
 
-# ... (ส่วน Credentials, API Key, PDF URLs, Init App เหมือนเดิม) ...
+# Init App (ประกาศ app ก่อนใช้งาน)
+app = Flask(__name__)
+
+# LINE Credentials
+CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+
+# OpenRouter API
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+
+# PDF URLs
+PDF_URLS = [
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900456.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/910513.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/921098.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952035.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952090.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955332.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955424.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961105.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
+]
+
+configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+api_client = ApiClient(configuration)
+messaging_api = MessagingApi(api_client)
+handler = WebhookHandler(CHANNEL_SECRET)
 
 def get_filename_from_url(url):
     return os.path.basename(urlparse(url).path)
