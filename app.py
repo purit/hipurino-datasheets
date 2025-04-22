@@ -8,9 +8,14 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
 from urllib.parse import urlparse
 import re
+import logging
 
 # Init App
 app = Flask(__name__)
+
+# Configure Logging (Optional, but highly recommended for production)
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 # LINE Credentials
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -38,20 +43,20 @@ def read_json_from_url(url):
         list: รายการของข้อมูลสินค้า (list of dicts) หากสำเร็จ, มิฉะนั้น None.
     """
     try:
-        print(f">>> กำลังดาวน์โหลด JSON จาก: {url}")
+        logging.info(f">>> กำลังดาวน์โหลด JSON จาก: {url}")
         response = requests.get(url)
         response.raise_for_status()  # ตรวจสอบ HTTP status code (raise exception ถ้ามี error)
         data = response.json()
-        print(f">>> อ่าน JSON จาก {url} เสร็จสิ้น")
+        logging.info(f">>> อ่าน JSON จาก {url} เสร็จสิ้น")
         return data.get('products', [])  # ดึง 'products' ออกมา, คืน list ว่างถ้าไม่มี
     except requests.exceptions.RequestException as e:
-        print(f"เกิดข้อผิดพลาดในการดาวน์โหลด JSON จาก {url}: {e}")
+        logging.error(f"เกิดข้อผิดพลาดในการดาวน์โหลด JSON จาก {url}: {e}")
         return None
     except json.JSONDecodeError as e:
-        print(f"เกิดข้อผิดพลาดในการ Parse JSON จาก {url}: {e}")
+        logging.error(f"เกิดข้อผิดพลาดในการ Parse JSON จาก {url}: {e}")
         return None
     except KeyError:
-        print(f"Error: 'products' key not found in JSON data from {url}")
+        logging.error(f"Error: 'products' key not found in JSON data from {url}")
         return None
 
 def query_openrouter(question, context):
@@ -60,26 +65,37 @@ def query_openrouter(question, context):
     (โค้ด Function query_openrouter เหมือนเดิม)
     """
     # ... (Function query_openrouter เหมือนเดิม) ...
+    # Placeholder for OpenRouter API call
+    logging.info(f">>> Calling OpenRouter with question: {question}, context: {context}")
+    return "Placeholder reply from OpenRouter"  # Replace with actual API call
     pass
 
 @app.route("/callback", methods=['POST'])
 def callback():
     """
     Endpoint สำหรับรับ Webhook จาก LINE.
-    (โค้ด Function callback เหมือนเดิม)
     """
-    # ... (Function callback เหมือนเดิม) ...
-    pass
+    body = request.get_data(as_text=True)
+    logging.info(f">>> รับ Webhook จาก LINE: {body}")  # Log the entire webhook body
+    try:
+        handler.handle(body, request.headers['X-Line-Signature'])
+    except InvalidSignatureError:
+        logging.warning(">>> Invalid signature. Aborting.")
+        abort(400)
+    except Exception as e:
+        logging.error(f">>> Error processing webhook: {e}")
+        abort(500)  # Internal Server Error
+    return '', 200
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     """
     จัดการกับ MessageEvent จาก LINE (ข้อความที่ผู้ใช้ส่งมา).
     """
-    print(">>> handle_message ถูกเรียกใช้งาน")
+    logging.info(">>> handle_message ถูกเรียกใช้งาน")
     user_message = event.message.text
     user_id = event.source.user_id
-    print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
+    logging.info(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
 
     products_data = read_json_from_url(JSON_FILE_URL)
     best_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
@@ -104,11 +120,11 @@ def handle_message(event):
                 messages=[TextMessage(text=best_reply)]
             )
         )
-        print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
+        logging.info(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
     except Exception as e:
-        print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
+        logging.error(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    print(f">>> Starting app on port: {port}")
+    logging.info(f">>> Starting app on port: {port}")
     app.run(host='0.0.0.0', port=port)
