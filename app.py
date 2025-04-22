@@ -62,11 +62,14 @@ def query_openrouter(question, context):
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
+    prompt = f"จากข้อมูลนี้: {context}\n\nตอบคำถามต่อไปนี้ให้สั้นและกระชับที่สุด: {question}"
     data = {
         "model": "deepseek/deepseek-r1:free",
         "messages": [
-            {"role": "user", "content": f"จากข้อมูลนี้: {context}\n\nตอบคำถาม: {question}"}
-        ]
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 150,  # กำหนดจำนวน Tokens สูงสุดของคำตอบ
+        "temperature": 0.2  # กำหนดค่า Temperature ให้ต่ำลง เพื่อลดความสร้างสรรค์
     }
     print(f"OpenRouter Request Headers: {headers}")
     print(f"OpenRouter Request Body: {json.dumps(data, ensure_ascii=False)}")
@@ -78,7 +81,7 @@ def query_openrouter(question, context):
         print(f"OpenRouter Response: {response_json}")
 
         if 'choices' in response_json and response_json['choices'] and 'message' in response_json['choices'][0]:
-            return response_json['choices'][0]['message']['content']
+            return response_json['choices'][0]['message']['content'].strip() # เพิ่ม .strip() เพื่อลบ Whitespace หน้าหลัง
         else:
             print("OpenRouter Response ไม่ถูกต้อง:", response_json)
             return "ขออภัย ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ (OpenRouter response error)"
