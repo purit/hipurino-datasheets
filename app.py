@@ -20,16 +20,16 @@ OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 # PDF URLs
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90045.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90046.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90153.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90158.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90203.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90259.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90302.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90404.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90405.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90413.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900456.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/910513.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/921098.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952035.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952090.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955332.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955424.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961105.pdf",
+    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
   ]
 
 # Init App
