@@ -14,17 +14,21 @@ import logging
 app = Flask(__name__)
 
 # Configure Logging (Optional, but highly recommended for production)
+# กำหนดค่าการ Logging (ไม่จำเป็น แต่แนะนำอย่างยิ่งสำหรับ Production)
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 # LINE Credentials
+# ข้อมูลรับรองของ LINE
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
 # OpenRouter API
+# API ของ OpenRouter
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
 # GitHub URL ของไฟล์ all_products.json
+# URL ของไฟล์ all_products.json บน GitHub
 JSON_FILE_URL = "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/data/all_products.json"  # แทนที่ด้วย URL ที่ถูกต้อง
 
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
@@ -66,8 +70,10 @@ def query_openrouter(question, context):
     """
     # ... (Function query_openrouter เหมือนเดิม) ...
     # Placeholder for OpenRouter API call
+    # ตัวแปรสำรองสำหรับการเรียก API ของ OpenRouter
     logging.info(f">>> Calling OpenRouter with question: {question}, context: {context}")
     return "Placeholder reply from OpenRouter"  # Replace with actual API call
+    # แทนที่ด้วยการเรียก API จริง
     pass
 
 @app.route("/callback", methods=['POST'])
@@ -77,14 +83,18 @@ def callback():
     """
     body = request.get_data(as_text=True)
     logging.info(f">>> รับ Webhook จาก LINE: {body}")  # Log the entire webhook body
+    # Log ข้อมูล Webhook ทั้งหมด
     try:
         handler.handle(body, request.headers['X-Line-Signature'])
     except InvalidSignatureError:
         logging.warning(">>> Invalid signature. Aborting.")
+        # ลายเซ็นไม่ถูกต้อง ยกเลิกการทำงาน
         abort(400)
     except Exception as e:
         logging.error(f">>> Error processing webhook: {e}")
+        # เกิดข้อผิดพลาดในการประมวลผล Webhook
         abort(500)  # Internal Server Error
+        # Internal Server Error
     return '', 200
 
 @handler.add(MessageEvent, message=TextMessageContent)
@@ -107,10 +117,13 @@ def handle_message(event):
                ("name" in product and re.search(re.escape(user_message), product["name"], re.IGNORECASE)) or \
                ("description" in product and re.search(re.escape(user_message), product["description"], re.IGNORECASE)):
                 context = json.dumps(product, ensure_ascii=False)  # ส่งข้อมูลสินค้าทั้ง Object เป็น Context
+                # ส่งข้อมูลสินค้าทั้ง Object เป็น Context
                 ai_reply = query_openrouter(user_message, context)
                 if ai_reply and "ขออภัย" not in ai_reply:
                     best_reply = ai_reply
                     break  # เจอสินค้าแล้วก็หยุด loop
+                    # เจอสินค้าแล้วก็หยุด loop
+            # คุณสามารถเพิ่ม Logic การค้นหาใน Fields อื่นๆ ได้ เช่น 'part_no'
             # คุณสามารถเพิ่ม Logic การค้นหาใน Fields อื่นๆ ได้ เช่น 'part_no'
 
     try:
