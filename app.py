@@ -106,12 +106,16 @@ def handle_message(event):
     best_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
     found_relevant_info = False
 
-    product_data = read_json_from_url(JSON_URL)
-    if product_data:
+    product_data_raw = read_json_from_url(JSON_URL)
+    print(f">>> ข้อมูล JSON ที่อ่านได้: {product_data_raw}") # แสดงข้อมูลดิบ
+
+    if product_data_raw and "products" in product_data_raw and isinstance(product_data_raw["products"], list):
+        product_list = product_data_raw["products"]
         context_list = []
-        for product in product_data:
-            # ปรับรูปแบบข้อมูลสินค้าให้อยู่ในรูปแบบที่ OpenRouter เข้าใจง่าย
-            context_list.append(f"ชื่อสินค้า: {product.get('product_name', 'ไม่มีชื่อ')}, รายละเอียด: {product.get('description', 'ไม่มีรายละเอียด')}")
+        for product in product_list:
+            product_name = product.get("name", "ไม่มีชื่อ")
+            description = product.get("description", "ไม่มีรายละเอียด")
+            context_list.append(f"ชื่อสินค้า: {product_name}, รายละเอียด: {description}")
 
         context = "\n".join(context_list)
         if context:
@@ -119,6 +123,8 @@ def handle_message(event):
             if ai_reply and "ขออภัย" not in ai_reply:
                 best_reply = ai_reply
                 found_relevant_info = True
+    else:
+        print(">>> รูปแบบข้อมูล JSON ไม่ถูกต้อง หรือไม่มี 'products' key")
 
     try:
         messaging_api.reply_message(
