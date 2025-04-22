@@ -24,7 +24,7 @@ CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 # OpenRouter API
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"  # URL ของ OpenRouter API
-OPENROUTER_MODEL = "anthropic/claude-2"  # เลือก Model ที่ต้องการใช้
+OPENROUTER_MODEL = "google/gemini-pro"  # เปลี่ยนเป็น Gemini Pro
 
 # GitHub URL ของไฟล์ all_products.json
 JSON_FILE_URL = "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/data/all_products.json"
@@ -71,6 +71,7 @@ def query_openrouter(question, context):
             "prompt": prompt,
             "model": OPENROUTER_MODEL,
             "max_tokens": 200,  # ปรับตามความเหมาะสม
+            # ... (Parameter อื่นๆ ของ Gemini Pro ถ้ามี)
         }
         logging.info(f">>> Sending to OpenRouter: {payload}")
 
@@ -80,7 +81,8 @@ def query_openrouter(question, context):
         ai_response = response.json()
         logging.info(f">>> Raw OpenRouter response: {ai_response}")
 
-        # ดึงคำตอบจาก API Response (ปรับตามโครงสร้าง Response ของ OpenRouter)
+        # ดึงคำตอบจาก API Response (ปรับตามโครงสร้าง Response ของ Gemini Pro)
+        # *** สำคัญ: ตรวจสอบโครงสร้าง Response ของ Gemini Pro และปรับโค้ดนี้ ***
         ai_text = ai_response["choices"][0]["message"]["content"].strip()
         logging.info(f">>> Parsed OpenRouter response: {ai_text}")
         return ai_text
