@@ -8,35 +8,13 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMe
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
 from io import BytesIO
+from urllib.parse import urlparse
+import re
 
-# LINE Credentials
-CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+# ... (ส่วน Credentials, API Key, PDF URLs, Init App เหมือนเดิม) ...
 
-# OpenRouter API
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
-
-# PDF URLs
-PDF_URLS = [
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900456.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/910513.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/921098.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952035.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952090.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955332.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955424.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961105.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
-]
-
-# Init App
-app = Flask(__name__)
-configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-api_client = ApiClient(configuration)
-messaging_api = MessagingApi(api_client)
-handler = WebhookHandler(CHANNEL_SECRET)
+def get_filename_from_url(url):
+    return os.path.basename(urlparse(url).path)
 
 def read_pdf_from_url(url):
     all_text = ""
@@ -118,17 +96,34 @@ def handle_message(event):
     user_id = event.source.user_id
     print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
 
+    relevant_pdf_text = None
     best_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
-    found_relevant_info = False
+    found_relevant_pdf = False
 
+    # ลองหาไฟล์ PDF ที่มีชื่อเกี่ยวข้องกับคำถาม (เช่น หมายเลข Part)
     for url in PDF_URLS:
-        pdf_text = read_pdf_from_url(url)
-        if pdf_text:
-            ai_reply = query_openrouter(user_message, pdf_text)
-            if ai_reply and "ขออภัย" not in ai_reply:
-                best_reply = ai_reply
-                found_relevant_info = True
-                break  # หยุดเมื่อได้คำตอบที่น่าพอใจ
+        filename = get_filename_from_url(url)
+        if re.search(re.escape(user_message), filename, re.IGNORECASE):
+            relevant_pdf_text = read_pdf_from_url(url)
+            found_relevant_pdf = True
+            break
+
+    # หากไม่พบจากชื่อไฟล์ ลองอ่านเนื้อหาบางส่วนของแต่ละไฟล์เพื่อหาความเกี่ยวข้อง (วิธีนี้อาจใช้ Memory มากขึ้น)
+    if not found_relevant_pdf:
+        for url in PDF_URLS:
+            pdf_text = read_pdf_from_url(url)
+            if re.search(re.escape(user_message), pdf_text[:500], re.IGNORECASE): # อ่านแค่ 500 ตัวอักษรแรก
+                relevant_pdf_text = pdf_text
+                found_relevant_pdf = True
+                break
+        # หากยังไม่พบความเกี่ยวข้องใดๆ ให้อ่านไฟล์แรก (หรืออาจจะข้ามไปเลยก็ได้)
+        if not found_relevant_pdf and PDF_URLS:
+            relevant_pdf_text = read_pdf_from_url(PDF_URLS[0])
+
+    if relevant_pdf_text:
+        ai_reply = query_openrouter(user_message, relevant_pdf_text)
+        if ai_reply and "ขออภัย" not in ai_reply:
+            best_reply = ai_reply
 
     try:
         messaging_api.reply_message(
