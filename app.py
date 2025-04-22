@@ -113,23 +113,25 @@ def callback():
 
     return 'OK'
 
-@handler.add(MessageEvent, message=TextSendMessage)
-def handle_message(event):
-    print(">>> handle_message ถูกเรียกใช้งาน")
-    user_message = event.message.text
-    print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}")
-    context = read_pdfs_from_urls(PDF_URLS)
-    print(">>> อ่าน PDF เสร็จสิ้น")
-    response_text = query_openrouter(user_message, context)
-    print(f">>> ได้รับคำตอบจาก OpenRouter: {response_text}")
-    try:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=response_text)
-        )
-        print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
-    except Exception as e:
-        print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
+@handler.add(MessageEvent)
+def handle_any_message(event):
+    print(f">>> ได้รับ Message Event ประเภท: {event.type}")
+    if isinstance(event.message, TextSendMessage):
+        print(">>> เป็น Text Message!")
+        user_message = event.message.text
+        print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}")
+        context = read_pdfs_from_urls(PDF_URLS)
+        print(">>> อ่าน PDF เสร็จสิ้น")
+        response_text = query_openrouter(user_message, context)
+        print(f">>> ได้รับคำตอบจาก OpenRouter: {response_text}")
+        try:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=response_text)
+            )
+            print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
+        except Exception as e:
+            print(f">>> เกิดข้อผิดพลาดในการส่งข้อความตอบกลับ: {e}")
 
 if __name__ == "__main__":
     app.run(port=int(os.environ.get("PORT", 5000)))
