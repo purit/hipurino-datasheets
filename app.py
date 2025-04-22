@@ -10,7 +10,7 @@ from linebot.models import MessageEvent, TextSendMessage
 
 # --- การตั้งค่าคีย์สำคัญจาก Environment Variables ---
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+CHANNEL_SECRET = '8137cf114e2719c5a58d46705071c558'
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
 # --- รายการ URL ของไฟล์ PDF บน GitHub ---
