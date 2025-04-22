@@ -99,8 +99,11 @@ def home():
 @app.route("/callback", methods=['POST'])
 def callback():
     print(">>> /callback ถูกเรียกใช้งาน")
+    print(f">>> CHANNEL_SECRET จาก env ใน callback: {os.environ.get('LINE_CHANNEL_SECRET')}")
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+    print(f">>> Body ที่ได้รับ: {body}")
+    print(f">>> Signature ที่ได้รับ: {signature}")
 
     try:
         handler.handle(body, signature)
