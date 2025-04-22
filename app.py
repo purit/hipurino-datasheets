@@ -1,7 +1,6 @@
 import os
 import requests
 import json
-import re
 import PyPDF2
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
@@ -30,7 +29,7 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955424.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961105.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
-  ]
+]
 
 # Init App
 app = Flask(__name__)
@@ -39,26 +38,23 @@ api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-def read_pdfs_from_urls(pdf_urls):
+def read_pdf_from_url(url):
     all_text = ""
-    for url in pdf_urls:
-        try:
-            print(f">>> กำลังดาวน์โหลด PDF จาก: {url}")
-            response = requests.get(url)
-            response.raise_for_status()
-            with requests.get(url, stream=True) as r:
-                r.raise_for_status()
-                pdf_file = BytesIO(r.content)
-                reader = PyPDF2.PdfReader(pdf_file)
-                for page in reader.pages:
-                    all_text += page.extract_text() + "\n"
-            print(f">>> อ่าน PDF จาก {url} เสร็จสิ้น")
-        except requests.exceptions.RequestException as e:
-            print(f"เกิดข้อผิดพลาดในการดาวน์โหลด PDF จาก {url}: {e}")
-        except PyPDF2.errors.PdfReadError as e:
-            print(f"เกิดข้อผิดพลาดในการอ่าน PDF จาก {url}: {e}")
-        except Exception as e:
-            print(f"ข้อผิดพลาดที่ไม่คาดคิดในการประมวลผล PDF จาก {url}: {e}")
+    try:
+        print(f">>> กำลังดาวน์โหลด PDF จาก: {url}")
+        response = requests.get(url)
+        response.raise_for_status()
+        with BytesIO(response.content) as pdf_file:
+            reader = PyPDF2.PdfReader(pdf_file)
+            for page in reader.pages:
+                all_text += page.extract_text() + "\n"
+        print(f">>> อ่าน PDF จาก {url} เสร็จสิ้น")
+    except requests.exceptions.RequestException as e:
+        print(f"เกิดข้อผิดพลาดในการดาวน์โหลด PDF จาก {url}: {e}")
+    except PyPDF2.errors.PdfReadError as e:
+        print(f"เกิดข้อผิดพลาดในการอ่าน PDF จาก {url}: {e}")
+    except Exception as e:
+        print(f"ข้อผิดพลาดที่ไม่คาดคิดในการประมวลผล PDF จาก {url}: {e}")
     return all_text.strip()
 
 def query_openrouter(question, context):
@@ -120,16 +116,24 @@ def handle_message(event):
     user_message = event.message.text
     user_id = event.source.user_id
     print(f">>> ข้อความที่ผู้ใช้ส่งมา: {user_message}, User ID: {user_id}")
-    pdf_text = read_pdfs_from_urls(PDF_URLS)
-    print(">>> อ่าน PDF เสร็จสิ้น")
-    ai_reply = query_openrouter(user_message, pdf_text)
-    print(f">>> คำตอบจาก OpenRouter: {ai_reply}")
+
+    best_reply = "ขออภัย ไม่พบข้อมูลที่เกี่ยวข้อง"
+    found_relevant_info = False
+
+    for url in PDF_URLS:
+        pdf_text = read_pdf_from_url(url)
+        if pdf_text:
+            ai_reply = query_openrouter(user_message, pdf_text)
+            if ai_reply and "ขออภัย" not in ai_reply:
+                best_reply = ai_reply
+                found_relevant_info = True
+                break  # หยุดเมื่อได้คำตอบที่น่าพอใจ
 
     try:
         messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=ai_reply)]
+                messages=[TextMessage(text=best_reply)]
             )
         )
         print(">>> ส่งข้อความตอบกลับไปยัง LINE สำเร็จ")
