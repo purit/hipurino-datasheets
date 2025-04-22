@@ -29,7 +29,7 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90404.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90405.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/90413.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/DSNY RED BOOK_2015_e_complete.pdf",
+    "https://github.com/purit/hipurino-datasheets/blob/main/pdfs/redbook.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-ec575-en.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/datarecord-flag-2100-en-po.pdf",
 ]
