@@ -45,30 +45,25 @@ try:
     # Initialize Supabase client
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     
-    # Initialize Sentence Transformer Model (load only once)
-    model = SentenceTransformer("all-mpnet-base-v2")
-    logger.info("SentenceTransformer model loaded successfully")
+    # ใช้โมเดลขนาดเล็กกว่า (แก้ตรงนี้)
+    model = SentenceTransformer(
+        "paraphrase-multilingual-MiniLM-L12-v2",  # โมเดลขนาด ~120MB
+        device="cpu"  # บังคับใช้ CPU เพื่อเสถียรภาพ
+    )
+    logger.info("โหลดโมเดล SentenceTransformer สำเร็จแล้ว")
     
     # Initialize LINE Messaging API
     configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
     api_client = ApiClient(configuration)
     messaging_api = MessagingApi(api_client)
     handler = WebhookHandler(CHANNEL_SECRET)
+    
 except Exception as e:
-    logger.error(f"Failed to initialize services: {str(e)}")
+    logger.error(f"เกิดข้อผิดพลาดในการตั้งค่าเซอร์วิส: {str(e)}")
     raise
 
 def query_openrouter(question: str, context: str) -> str:
-    """
-    Query OpenRouter API with the given question and context
-    
-    Args:
-        question: User's question
-        context: Product information context
-    
-    Returns:
-        str: Response from OpenRouter or error message
-    """
+    """ ส่งคำถามไปยัง OpenRouter """
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
@@ -86,52 +81,26 @@ def query_openrouter(question: str, context: str) -> str:
         "temperature": 0.2
     }
     
-    logger.debug(f"OpenRouter Request Body: {json.dumps(data, ensure_ascii=False)}")
-    
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=data,
-            timeout=10  # Add timeout to prevent hanging
+            timeout=15  # เพิ่มเวลา timeout
         )
         response.raise_for_status()
-        
-        response_json = response.json()
-        logger.debug(f"OpenRouter Response: {response_json}")
-        
-        if response_json.get('choices') and response_json['choices'][0].get('message'):
-            return response_json['choices'][0]['message']['content'].strip()
-        
-        logger.error(f"Unexpected OpenRouter response format: {response_json}")
-        return "ขออภัย ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ (รูปแบบคำตอบไม่ถูกต้อง)"
+        return response.json()['choices'][0]['message']['content'].strip()
     
-    except requests.exceptions.RequestException as e:
-        logger.error(f"OpenRouter request failed: {str(e)}")
-        return "ขออภัย ระบบไม่สามารถเชื่อมต่อกับ OpenRouter ได้"
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode OpenRouter response: {str(e)}")
-        return "ขออภัย มีปัญหาในการประมวลผลข้อมูลจาก OpenRouter"
     except Exception as e:
-        logger.error(f"Unexpected error in query_openrouter: {str(e)}")
-        return "ขออภัย เกิดข้อผิดพลาดในการประมวลผลคำถาม"
+        logger.error(f"OpenRouter เกิดข้อผิดพลาด: {str(e)}")
+        return "ขออภัย ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้"
 
 def get_relevant_products(query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-    """
-    Get relevant products from Supabase using vector search
-    
-    Args:
-        query: User's query
-        top_k: Number of results to return
-    
-    Returns:
-        List of relevant products or empty list on error
-    """
+    """ ค้นหาสินค้าที่เกี่ยวข้องจาก Supabase """
     try:
-        # Generate embedding for the query
-        query_embedding = model.encode(query).tolist()
+        # สร้าง embedding ด้วยโมเดลขนาดเล็ก
+        query_embedding = model.encode(query, convert_to_tensor=False).tolist()
         
-        # Call Supabase function
         response = supabase.rpc(
             'match_content',
             {
@@ -140,95 +109,64 @@ def get_relevant_products(query: str, top_k: int = 3) -> List[Dict[str, Any]]:
             }
         ).execute()
         
-        if response.data:
-            return response.data
-        return []
+        return response.data if response.data else []
     
     except Exception as e:
-        logger.error(f"Error in get_relevant_products: {str(e)}")
+        logger.error(f"ค้นหาสินค้าผิดพลาด: {str(e)}")
         return []
 
 @app.route("/callback", methods=['POST'])
 def callback():
-    """
-    Handle LINE webhook callback
-    """
+    """ รับการเรียกกลับจาก LINE """
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
-    
-    logger.info("Received LINE webhook callback")
-    logger.debug(f"Request body: {body}")
-    logger.debug(f"Signature: {signature}")
     
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.error("Invalid signature")
         abort(400)
     except Exception as e:
-        logger.error(f"Error handling webhook: {str(e)}")
+        logger.error(f"จัดการ webhook ผิดพลาด: {str(e)}")
         abort(500)
     
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    """
-    Handle text message from LINE
-    """
+    """ จัดการข้อความจากผู้ใช้ """
     try:
         user_message = event.message.text
-        user_id = event.source.user_id
+        logger.info(f"ได้รับข้อความจากผู้ใช้: {user_message}")
         
-        logger.info(f"Received message from user {user_id}: {user_message}")
-        
-        # Default reply if no relevant products found
-        best_reply = "ขออภัย ไม่พบข้อมูลสินค้าที่เกี่ยวข้อง"
-        
-        # Get relevant products
+        # ค้นหาสินค้า
         relevant_items = get_relevant_products(user_message)
-        if relevant_items:
-            context = "\n---\n".join(
-                f"ข้อมูลสินค้า: {item['content']}" 
-                for item in relevant_items
-            )
-            
-            # Query OpenRouter with context
-            ai_reply = query_openrouter(user_message, context)
-            
-            if ai_reply and "ขออภัย" not in ai_reply:
-                best_reply = ai_reply
         
-        # Send reply
+        if not relevant_items:
+            reply = "ไม่พบสินค้าที่เกี่ยวข้อง"
+        else:
+            context = "\n---\n".join(item['content'] for item in relevant_items)
+            reply = query_openrouter(user_message, context)
+        
+        # ส่งคำตอบกลับ
         messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=best_reply)]
+                messages=[TextMessage(text=reply)]
             )
-        )
-        
-        logger.info("Successfully replied to user")
     
     except Exception as e:
-        logger.error(f"Error in handle_message: {str(e)}")
-        # Attempt to send error message to user
-        try:
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาดในการประมวลผลคำถาม")]
-                )
+        logger.error(f"จัดการข้อความผิดพลาด: {str(e)}")
+        messaging_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text="ขออภัย ระบบขัดข้องชั่วคราว")]
             )
-        except Exception as inner_e:
-            logger.error(f"Failed to send error message: {str(inner_e)}")
+        )
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """
-    Health check endpoint
-    """
-    return {'status': 'healthy'}, 200
+    """ ตรวจสอบสถานะเซอร์วิส """
+    return {'status': 'พร้อมทำงาน', 'model': 'paraphrase-multilingual-MiniLM-L12-v2'}, 200
 
 if __name__ == "__main__":
-    logger.info(f"Starting application on port {PORT}")
     app.run(host='0.0.0.0', port=PORT)
