@@ -24,14 +24,14 @@ logger = logging.getLogger(__name__)
 # Configuration
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY') # เราอาจจะยังเก็บไว้ใช้สำหรับ Chat Completion
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
 PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT', 'gcp-starter')
 PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'pdf-documents')
-HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN') # เพิ่ม Environment Variable สำหรับ Hugging Face Token (ถ้าจำเป็น)
-HUGGINGFACE_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2" # โมเดล Embeddings ที่จะใช้
+HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN')
+HUGGINGFACE_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
-# PDF URLs (ยังคงเดิม)
+# PDF URLs
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
@@ -97,14 +97,23 @@ class PDFProcessor:
 
     def get_embedding(self, text: str) -> Optional[List[float]]:
         api_url = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_EMBEDDING_MODEL}"
-        headers = {}
-        if HUGGINGFACE_API_TOKEN:
-            headers["Authorization"] = f"Bearer {HUGGINGFACE_API_TOKEN}"
-        payload = {"inputs": text}
+        headers = {"Content-Type": "application/json"} # นำ Authorization Header ออกชั่วคราว
+        payload = {"inputs": text[:512]} # จำกัดความยาว Input เป็น 512 ตัวอักษรแรก
         try:
             response = requests.post(api_url, headers=headers, json=payload, timeout=15)
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
+                return result[0]
+            else:
+                logger.error(f"Hugging Face Embedding response format unexpected: {result}")
+                return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Hugging Face Embedding request error: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Hugging Face Embedding response decode error: {e}, Response text: {response.text}")
+            return None
         except Exception as e:
             logger.error(f"Hugging Face Embedding error: {e}")
             return None
