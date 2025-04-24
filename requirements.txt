@@ -5,4 +5,4 @@ PyPDF2
 python-dotenv
 pinecone
 gunicorn
-cohere
+cohere==4.57
