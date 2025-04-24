@@ -7,11 +7,11 @@ import os
 import requests
 import json
 import logging
+from typing import Optional, List
 import PyPDF2
 from io import BytesIO
 from dotenv import load_dotenv
-import pinecone
-from typing import Optional, List
+from pinecone import Pinecone  # เปลี่ยนการ import
 
 # Load environment variables
 load_dotenv()
@@ -25,185 +25,38 @@ CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
-PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT', 'gcp-starter')
 PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'pdf-documents')
 
 # PDF URLs
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900456.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/910513.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/921098.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952035.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/952090.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955332.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/955424.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961105.pdf",
-    "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
+    # ... รายการ URL อื่นๆ ...
 ]
 
-# Validate required environment variables
 if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, OPENROUTER_API_KEY, PINECONE_API_KEY]):
     raise ValueError("Missing required environment variables")
 
-# Flask app setup
 app = Flask(__name__)
-
-# LINE API setup
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# Pinecone setup
-pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+# เริ่มต้น Pinecone
+pc = Pinecone(api_key=PINECONE_API_KEY)
 
 class PDFProcessor:
     def __init__(self):
         self.cached_text: Optional[str] = None
-        self.vector_index = None
+        
+        # ตรวจสอบและสร้าง index หากจำเป็น
+        if PINECONE_INDEX_NAME not in pc.list_indexes().names():
+            pc.create_index(
+                name=PINECONE_INDEX_NAME,
+                dimension=1536,
+                metric="cosine"
+            )
+        
+        self.vector_index = pc.Index(PINECONE_INDEX_NAME)
 
-    def initialize_pinecone(self):
-        if PINECONE_INDEX_NAME not in pinecone.list_indexes():
-            pinecone.create_index(name=PINECONE_INDEX_NAME, dimension=1536, metric="cosine")
-        self.vector_index = pinecone.Index(PINECONE_INDEX_NAME)
-
-    def download_pdf(self, url: str) -> Optional[BytesIO]:
-        try:
-            res = requests.get(url, timeout=10)
-            res.raise_for_status()
-            return BytesIO(res.content)
-        except Exception as e:
-            logger.error(f"Download error [{url}]: {e}")
-            return None
-
-    def extract_text(self, stream: BytesIO) -> str:
-        try:
-            reader = PyPDF2.PdfReader(stream)
-            return "\n".join(filter(None, (page.extract_text() for page in reader.pages)))
-        except Exception as e:
-            logger.error(f"Extract error: {e}")
-            return ""
-
-    def get_embedding(self, text: str) -> Optional[List[float]]:
-        try:
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            data = {"model": "text-embedding-ada-002", "input": text}
-            res = requests.post("https://openrouter.ai/api/v1/embeddings", headers=headers, json=data, timeout=15)
-            res.raise_for_status()
-            return res.json()['data'][0]['embedding']
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return None
-
-    def process_pdfs(self) -> str:
-        if self.cached_text:
-            return self.cached_text
-        all_text = []
-        for url in PDF_URLS:
-            stream = self.download_pdf(url)
-            if not stream:
-                continue
-            text = self.extract_text(stream)
-            if not text:
-                continue
-            chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
-            for i, chunk in enumerate(chunks):
-                emb = self.get_embedding(chunk)
-                if emb:
-                    self.vector_index.upsert([{
-                        "id": f"{url.split('/')[-1]}-{i}",
-                        "values": emb,
-                        "metadata": {"text": chunk, "source": url}
-                    }])
-            all_text.append(text)
-        self.cached_text = "\n".join(all_text)
-        return self.cached_text
-
-    def search(self, query: str, top_k: int = 3) -> List[str]:
-        emb = self.get_embedding(query)
-        if not emb:
-            return []
-        results = self.vector_index.query(vector=emb, top_k=top_k, include_metadata=True)
-        return [m['metadata']['text'] for m in results.get('matches', [])]
-
-pdf_processor = PDFProcessor()
-pdf_processor.initialize_pinecone()
-
-def query_openrouter(question: str, context: str) -> str:
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://your-render-app-url.onrender.com",
-        "X-Title": "PDF Chatbot"
-    }
-    data = {
-        "model": "deepseek/deepseek-r1:free",
-        "messages": [
-            {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามจากข้อมูลที่ให้มาเท่านั้น ตอบให้สั้น กระชับ เข้าใจง่าย และเป็นภาษาไทยเท่านั้น"},
-            {"role": "user", "content": f"ข้อมูลอ้างอิง:\n{context}\n\nคำถาม: {question}\n\nคำตอบ:"}
-        ],
-        "temperature": 0.3
-    }
-    try:
-        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=15)
-        res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        logger.error(f"OpenRouter error: {e}")
-        return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล"
-
-@app.route("/callback", methods=['POST'])
-def callback():
-    signature = request.headers.get('X-Line-Signature', '')
-    body = request.get_data(as_text=True)
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        logger.warning("Invalid signature")
-        abort(400)
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
-        abort(500)
-    return 'OK'
-
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event):
-    try:
-        user_msg = event.message.text
-        user_id = event.source.user_id
-        logger.info(f"Message from {user_id}: {user_msg}")
-
-        positive = ["ขอบคุณ", "เก่งมาก", "ดีมาก", "เยี่ยมเลย"]
-        negative = ["แย่มาก", "ไม่ดีเลย", "ผิดหวัง"]
-        rude = ["ไอ้", "อี", "เหี้ย", "สัส"]
-        greetings = ["หวัดดี", "สวัสดี", "Hi", "Hello", "ไง"]
-
-        if user_msg.lower() in map(str.lower, positive):
-            reply = "ขอบคุณมากครับ/ค่ะ ยินดีที่ให้บริการครับ/ค่ะ"
-        elif any(w in user_msg.lower() for w in negative):
-            reply = "ขออภัยเป็นอย่างสูงสำหรับประสบการณ์ที่ไม่ดีครับ/ค่ะ"
-        elif any(w in user_msg.lower() for w in rude):
-            reply = "เช่นกันครับ"
-        elif user_msg.lower() in map(str.lower, greetings):
-            reply = "สวัสดีครับ/ค่ะ มีอะไรให้ผม/ดิฉันช่วยค้นหาจากข้อมูลในเอกสารได้บ้างครับ?"
-        else:
-            context = "\n\n".join(pdf_processor.search(user_msg))
-            reply = query_openrouter(user_msg, context) if context else "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
-
-        messaging_api.reply_message_with_http_info(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply)])
-        )
-    except Exception as e:
-        logger.error(f"Handle error: {e}")
-        messaging_api.reply_message_with_http_info(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาด")])
-        )
-
-if __name__ == "__main__":
-    pdf_processor.process_pdfs()  # คำนวณ PDF ตอนเริ่มต้น
-    app.run(host='0.0.0.0', port=5000)  # รัน Flask
+    # ... เมธอดอื่นๆคงเดิม ...
