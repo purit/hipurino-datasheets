@@ -53,22 +53,23 @@ api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+# Initialize Pinecone
+pc = pinecone.Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
 
 class PDFProcessor:
     def __init__(self):
         self.cached_text: Optional[str] = None
-        self.index = self._connect_pinecone()
+        self.index = self._connect_pinecone(pc)
         self._populate_index()
 
-    def _connect_pinecone(self):
-        if PINECONE_INDEX_NAME not in pinecone.list_indexes().names():
-            pinecone.create_index(PINECONE_INDEX_NAME, dimension=1536, metric="cosine")
+    def _connect_pinecone(self, pc_instance):
+        if PINECONE_INDEX_NAME not in pc_instance.list_indexes().names():
+            pc_instance.create_index(PINECONE_INDEX_NAME, dimension=1536, metric="cosine")
             time.sleep(1)
             logger.info(f"Pinecone index '{PINECONE_INDEX_NAME}' created.")
         else:
             logger.info(f"Pinecone index '{PINECONE_INDEX_NAME}' already exists.")
-        return pinecone.Index(PINECONE_INDEX_NAME)
+        return pc_instance.Index(PINECONE_INDEX_NAME)
 
     def download_pdf(self, url: str) -> Optional[BytesIO]:
         try:
