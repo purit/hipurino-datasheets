@@ -13,7 +13,7 @@ from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.exceptions import InvalidSignatureError
-import cohere # Import Library Cohere
+import cohere
 
 # Load environment variables
 load_dotenv()
@@ -28,13 +28,11 @@ CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
 PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT', 'gcp-starter')
-PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'pdf-documents')
-# HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN') # ไม่ใช้แล้ว
-# HUGGINGFACE_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2" # ไม่ใช้แล้ว
-COHERE_API_KEY = os.getenv('COHERE_API_KEY') # เพิ่ม COHERE_API_KEY
-COHERE_EMBEDDING_MODEL = "embed-english-light-v2.0" # โมเดล Embeddings ของ Cohere
+PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'hipurino-index1')
+COHERE_API_KEY = os.getenv('COHERE_API_KEY')
+COHERE_EMBEDDING_MODEL = "embed-english-light-v2.0"
 
-# PDF URLs (เหมือนเดิม)
+# PDF URLs
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
@@ -49,7 +47,7 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
 ]
 
-if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, PINECONE_API_KEY, COHERE_API_KEY]): # เพิ่ม COHERE_API_KEY ในการตรวจสอบ
+if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, PINECONE_API_KEY, COHERE_API_KEY]):
     raise ValueError("Missing required environment variables")
 
 app = Flask(__name__)
@@ -58,13 +56,13 @@ api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# Initialize Pinecone (เหมือนเดิม)
+# Initialize Pinecone
 pc = pinecone.Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
 
 class PDFProcessor:
     def __init__(self):
         self.cached_text: Optional[str] = None
-        self.co = cohere.Client(COHERE_API_KEY) # Initialize Cohere Client
+        self.co = cohere.Client(COHERE_API_KEY)
         self.index = self._connect_pinecone(pc)
         self._populate_index()
 
@@ -72,7 +70,7 @@ class PDFProcessor:
         if PINECONE_INDEX_NAME not in pc_instance.list_indexes().names():
             pc_instance.create_index(
                 name=PINECONE_INDEX_NAME,
-                dimension=1024,  # Dimension ของ embed-english-light-v2.0 คือ 1024
+                dimension=1024,
                 metric="cosine"
                 # metadata_config={'indexed': ['source']} # ถ้าต้องการ Index metadata 'source' ด้วย
             )
@@ -102,7 +100,7 @@ class PDFProcessor:
     def get_embedding(self, text: str) -> Optional[List[float]]:
         try:
             response = self.co.embed(
-                texts=[text[:512]], # จำกัดความยาว Input
+                texts=[text[:512]],
                 model=COHERE_EMBEDDING_MODEL
             )
             if response.embeddings and len(response.embeddings) > 0:
