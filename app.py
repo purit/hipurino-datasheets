@@ -142,7 +142,7 @@ class PDFProcessor:
         self.cached_text = "\n".join(all_text)
         logger.info("PDF documents processed and indexed.")
 
-    def search(self, query: str, top_k: int = 2, context_length: int = 1000) -> List[str]:
+    def search(self, query: str, top_k: int = 1, context_length: int = 1000) -> List[str]:
         logger.info(f"Searching Pinecone for query: '{query}'")
         emb = self.get_embedding(query)
         if not emb:
@@ -168,9 +168,9 @@ def query_openrouter(question: str, context: str) -> str:
         "X-Title": "PDF Chatbot"
     }
     data = {
-        "model": "deepseek/deepseek-v3-base:free",
+        "model": "meta-llama/llama-3.2-1b-instruct:free",
         "messages": [
-            {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามสินค้า SPD Surge protection device แบรนด์ DEHN จากข้อมูลที่ให้มาเท่านั้น ตอบให้สั้นและกระชับได้ใจความที่สุด หากมีข้อมูลสเปคของสินค้าในข้อมูลอ้างอิง ให้ตอบสเปคเหล่านั้น หากไม่มีหรือไม่แน่ใจ ให้แจ้งว่าไม่มีข้อมูลสเปค"},
+            {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามจากข้อมูลที่ให้มาเท่านั้น หากมีข้อมูลสเปคของสินค้าในข้อมูลอ้างอิง ให้ตอบสเปคเหล่านั้น หากไม่มีหรือไม่แน่ใจ ให้แจ้งว่าไม่มีข้อมูลสเปค"},
             {"role": "user", "content": f"ข้อมูลอ้างอิง:\n{context}\n\nคำถาม: {question}\n\nคำตอบ:"}
         ],
         "temperature": 0.3
