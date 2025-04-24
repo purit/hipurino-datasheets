@@ -13,22 +13,22 @@ from io import BytesIO
 from dotenv import load_dotenv
 import pinecone
 
-# โหลด environment variables
+# Load environment variables
 load_dotenv()
 
-# ตั้งค่าการบันทึกเหตุการณ์
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ข้อมูลการกำหนดค่า
-CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
-PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
-PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT', 'gcp-starter')
-PINECONE_INDEX_NAME = os.environ.get('PINECONE_INDEX_NAME', 'pdf-documents')
+# Configuration
+CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT', 'gcp-starter')
+PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'pdf-documents')
 
-# URL ของ PDF ใน GitHub
+# PDF URLs
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
@@ -43,264 +43,171 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
 ]
 
-# ตรวจสอบค่าที่จำเป็น
+# Validate required environment variables
 if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, OPENROUTER_API_KEY, PINECONE_API_KEY]):
     raise ValueError("Missing required environment variables")
 
-# เริ่มต้นแอป Flask
+# Flask app setup
 app = Flask(__name__)
 
-# ตั้งค่า LINE
+# LINE API setup
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# ตั้งค่า Pinecone
+# Pinecone setup
 pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
 
 class PDFProcessor:
     def __init__(self):
         self.cached_text: Optional[str] = None
         self.vector_index = None
-        
+
     def initialize_pinecone(self):
-        """Initialize Pinecone index"""
         if PINECONE_INDEX_NAME not in pinecone.list_indexes():
-            pinecone.create_index(
-                name=PINECONE_INDEX_NAME,
-                dimension=1536,  # ตามขนาด embedding ที่ใช้
-                metric="cosine"
-            )
-        
+            pinecone.create_index(name=PINECONE_INDEX_NAME, dimension=1536, metric="cosine")
         self.vector_index = pinecone.Index(PINECONE_INDEX_NAME)
-    
-    def download_pdf(self, url: str) -> BytesIO:
-        """Download PDF from URL"""
+
+    def download_pdf(self, url: str) -> Optional[BytesIO]:
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            return BytesIO(response.content)
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
+            return BytesIO(res.content)
         except Exception as e:
-            logger.error(f"Error downloading PDF from {url}: {str(e)}")
+            logger.error(f"Download error [{url}]: {e}")
             return None
-    
-    def extract_text_from_pdf(self, pdf_stream: BytesIO) -> str:
-        """Extract text from PDF stream"""
+
+    def extract_text(self, stream: BytesIO) -> str:
         try:
-            reader = PyPDF2.PdfReader(pdf_stream)
-            text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-            return text
+            reader = PyPDF2.PdfReader(stream)
+            return "\n".join(filter(None, (page.extract_text() for page in reader.pages)))
         except Exception as e:
-            logger.error(f"Error extracting text from PDF: {str(e)}")
+            logger.error(f"Extract error: {e}")
             return ""
-    
-    def get_embedding(self, text: str) -> List[float]:
-        """Get embedding vector for text using OpenRouter"""
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "text-embedding-ada-002",
-            "input": text
-        }
-        
+
+    def get_embedding(self, text: str) -> Optional[List[float]]:
         try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/embeddings",
-                headers=headers,
-                json=data,
-                timeout=15
-            )
-            response.raise_for_status()
-            return response.json()['data'][0]['embedding']
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            data = {"model": "text-embedding-ada-002", "input": text}
+            res = requests.post("https://openrouter.ai/api/v1/embeddings", headers=headers, json=data, timeout=15)
+            res.raise_for_status()
+            return res.json()['data'][0]['embedding']
         except Exception as e:
-            logger.error(f"Error getting embedding: {str(e)}")
+            logger.error(f"Embedding error: {e}")
             return None
-    
+
     def process_pdfs(self) -> str:
-        """Process all PDFs and store in Pinecone"""
-        if self.cached_text is not None:
+        if self.cached_text:
             return self.cached_text
-            
         all_text = []
-        
-        for pdf_url in PDF_URLS:
-            try:
-                pdf_stream = self.download_pdf(pdf_url)
-                if not pdf_stream:
-                    continue
-                    
-                text = self.extract_text_from_pdf(pdf_stream)
-                if not text:
-                    continue
-                    
-                # แบ่งข้อความเป็น chunks (ประมาณ 500-1000 คำต่อ chunk)
-                chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
-                
-                for i, chunk in enumerate(chunks):
-                    embedding = self.get_embedding(chunk)
-                    if embedding:
-                        # เก็บใน Pinecone
-                        self.vector_index.upsert(
-                            vectors=[{
-                                "id": f"{pdf_url.split('/')[-1]}-{i}",
-                                "values": embedding,
-                                "metadata": {
-                                    "text": chunk,
-                                    "source": pdf_url
-                                }
-                            }]
-                        )
-                
-                all_text.append(text)
-                
-            except Exception as e:
-                logger.error(f"Error processing {pdf_url}: {str(e)}")
+        for url in PDF_URLS:
+            stream = self.download_pdf(url)
+            if not stream:
                 continue
-        
+            text = self.extract_text(stream)
+            if not text:
+                continue
+            chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
+            for i, chunk in enumerate(chunks):
+                emb = self.get_embedding(chunk)
+                if emb:
+                    self.vector_index.upsert([{
+                        "id": f"{url.split('/')[-1]}-{i}",
+                        "values": emb,
+                        "metadata": {"text": chunk, "source": url}
+                    }])
+            all_text.append(text)
         self.cached_text = "\n".join(all_text)
         return self.cached_text
-    
-    def search_relevant_text(self, query: str, top_k: int = 3) -> List[str]:
-        """Search for relevant text in Pinecone"""
-        query_embedding = self.get_embedding(query)
-        if not query_embedding:
+
+    def search(self, query: str, top_k: int = 3) -> List[str]:
+        emb = self.get_embedding(query)
+        if not emb:
             return []
-            
-        results = self.vector_index.query(
-            vector=query_embedding,
-            top_k=top_k,
-            include_metadata=True
-        )
-        
-        return [match['metadata']['text'] for match in results['matches']]
+        results = self.vector_index.query(vector=emb, top_k=top_k, include_metadata=True)
+        return [m['metadata']['text'] for m in results.get('matches', [])]
 
 pdf_processor = PDFProcessor()
 pdf_processor.initialize_pinecone()
 
+
 def query_openrouter(question: str, context: str) -> str:
-    """ส่งคำถามไปยัง OpenRouter API"""
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://your-render-app-url.onrender.com",
         "X-Title": "PDF Chatbot"
     }
-
     data = {
         "model": "deepseek/deepseek-r1:free",
         "messages": [
-            {
-                "role": "system",
-                "content": "คุณเป็นผู้ช่วยที่ตอบคำถามจากข้อมูลที่ให้มาเท่านั้น ตอบให้สั้น กระชับ เข้าใจง่าย และเป็นภาษาไทยเท่านั้น"
-            },
-            {
-                "role": "user",
-                "content": f"ข้อมูลอ้างอิง:\n{context}\n\nคำถาม: {question}\n\nคำตอบ:"
-            }
+            {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามจากข้อมูลที่ให้มาเท่านั้น ตอบให้สั้น กระชับ เข้าใจง่าย และเป็นภาษาไทยเท่านั้น"},
+            {"role": "user", "content": f"ข้อมูลอ้างอิง:\n{context}\n\nคำถาม: {question}\n\nคำตอบ:"}
         ],
         "temperature": 0.3
     }
-
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=15
-        )
-        response.raise_for_status()
-
-        response_data = response.json()
-        if not response_data.get('choices'):
-            raise ValueError("Invalid response format from OpenRouter")
-
-        return response_data['choices'][0]['message']['content'].strip()
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"OpenRouter request failed: {str(e)}")
-        return "ขออภัย เกิดปัญหาการเชื่อมต่อ"
+        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=15)
+        res.raise_for_status()
+        return res.json()['choices'][0]['message']['content'].strip()
     except Exception as e:
-        logger.error(f"OpenRouter processing error: {str(e)}")
+        logger.error(f"OpenRouter error: {e}")
         return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล"
+
 
 @app.route("/callback", methods=['POST'])
 def callback():
-    """จัดการ LINE Webhook"""
     signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.warning("Invalid signature detected")
+        logger.warning("Invalid signature")
         abort(400)
     except Exception as e:
-        logger.error(f"Webhook handler error: {str(e)}")
+        logger.error(f"Callback error: {e}")
         abort(500)
-
     return 'OK'
+
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    """จัดการข้อความจากผู้ใช้"""
     try:
-        user_message = event.message.text
+        user_msg = event.message.text
         user_id = event.source.user_id
-        logger.info(f"Received message from {user_id}: {user_message}")
+        logger.info(f"Message from {user_id}: {user_msg}")
 
-        # ตรวจสอบว่าเป็นคำชมหรือไม่
-        positive_feedback = ["ขอบคุณ", "เก่งมาก", "ดีมาก", "เยี่ยมเลย"]
-        if user_message.lower() in [feedback.lower() for feedback in positive_feedback]:
+        positive = ["ขอบคุณ", "เก่งมาก", "ดีมาก", "เยี่ยมเลย"]
+        negative = ["แย่มาก", "ไม่ดีเลย", "ผิดหวัง"]
+        rude = ["ไอ้", "อี", "เหี้ย", "สัส"]
+        greetings = ["หวัดดี", "สวัสดี", "Hi", "Hello", "ไง"]
+
+        if user_msg.lower() in map(str.lower, positive):
             reply = "ขอบคุณมากครับ/ค่ะ ยินดีที่ให้บริการครับ/ค่ะ"
-        # ตรวจสอบว่าเป็นคำตำหนิหรือไม่
-        elif any(word.lower() in user_message.lower() for word in ["แย่มาก", "ไม่ดีเลย", "ผิดหวัง"]):
-            reply = "ขออภัยเป็นอย่างสูงสำหรับประสบการณ์ที่ไม่ดีที่ท่านได้รับครับ/ค่ะ"
-        # ตรวจสอบว่าเป็นคำหยาบหรือไม่สุภาพ
-        elif any(word.lower() in user_message.lower() for word in ["ไอ้", "อี", "เหี้ย", "สัส"]):
+        elif any(w in user_msg.lower() for w in negative):
+            reply = "ขออภัยเป็นอย่างสูงสำหรับประสบการณ์ที่ไม่ดีครับ/ค่ะ"
+        elif any(w in user_msg.lower() for w in rude):
             reply = "เช่นกันครับ"
-        # ตรวจสอบว่าเป็นคำทักทายหรือไม่
+        elif user_msg.lower() in map(str.lower, greetings):
+            reply = "สวัสดีครับ/ค่ะ มีอะไรให้ผม/ดิฉันช่วยค้นหาจากข้อมูลในเอกสารได้บ้างครับ?"
         else:
-            greetings = ["หวัดดี", "สวัสดี", "Hi", "Hello", "ไง"]
-            if user_message.lower() in [greet.lower() for greet in greetings]:
-                reply = f"สวัสดีครับ/ค่ะ ยินดีที่ได้คุยกับคุณ มีอะไรให้ผม/ดิฉันช่วยค้นหาจากข้อมูลในเอกสารได้บ้างครับ?"
-            else:
-                # ค้นหาข้อความที่เกี่ยวข้องจาก Pinecone
-                relevant_texts = pdf_processor.search_relevant_text(user_message)
-                context = "\n\n".join(relevant_texts)
-                
-                if not context:
-                    reply = "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
-                else:
-                    response_from_ai = query_openrouter(user_message, context)
-                    if "ขออภัย" in response_from_ai:
-                        reply = f"{response_from_ai}\nหากต้องการให้เจ้าหน้าที่ติดต่อกลับ รบกวนฝาก ชื่อ, เบอร์ติดต่อกลับ, อีเมล, และชื่อบริษัท ด้วยครับ/ค่ะ"
-                    else:
-                        reply = response_from_ai
+            context = "\n\n".join(pdf_processor.search(user_msg))
+            reply = query_openrouter(user_msg, context) if context else "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
 
-        # ส่งคำตอบกลับ
         messaging_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply)]
-            )
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply)])
         )
-
     except Exception as e:
-        logger.error(f"Message handling error: {str(e)}")
+        logger.error(f"Handle error: {e}")
         messaging_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาดในการประมวลผล")]
-            )
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาด")])
         )
+
 
 if __name__ == "__main__":
-    # โหลดและประมวลผล PDFs ล่วงหน้า
     pdf_processor.process_pdfs()
-    
-    # เริ่มเซิร์ฟเวอร์
     app.run(host='0.0.0.0', port=5000)
