@@ -1,8 +1,3 @@
-from flask import Flask, request, abort
-from linebot.v3 import WebhookHandler
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
-from linebot.exceptions import InvalidSignatureError
 import os
 import requests
 import json
@@ -13,6 +8,11 @@ from io import BytesIO
 from dotenv import load_dotenv
 import pinecone
 import time
+from flask import Flask, request, abort
+from linebot.v3 import WebhookHandler
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.exceptions import InvalidSignatureError
 
 # Load environment variables
 load_dotenv()
@@ -24,12 +24,14 @@ logger = logging.getLogger(__name__)
 # Configuration
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY') # เราอาจจะยังเก็บไว้ใช้สำหรับ Chat Completion
 PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
 PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT', 'gcp-starter')
 PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME', 'pdf-documents')
+HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN') # เพิ่ม Environment Variable สำหรับ Hugging Face Token (ถ้าจำเป็น)
+HUGGINGFACE_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2" # โมเดล Embeddings ที่จะใช้
 
-# PDF URLs
+# PDF URLs (ยังคงเดิม)
 PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900368.pdf",
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/900451.pdf",
@@ -44,7 +46,7 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
 ]
 
-if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, OPENROUTER_API_KEY, PINECONE_API_KEY]):
+if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, PINECONE_API_KEY]):
     raise ValueError("Missing required environment variables")
 
 app = Flask(__name__)
@@ -66,7 +68,7 @@ class PDFProcessor:
         if PINECONE_INDEX_NAME not in pc_instance.list_indexes().names():
             pc_instance.create_index(
                 name=PINECONE_INDEX_NAME,
-                dimension=1536,
+                dimension=384,  # Dimension ของ all-MiniLM-L6-v2 คือ 384
                 metric="cosine"
                 # metadata_config={'indexed': ['source']} # ถ้าต้องการ Index metadata 'source' ด้วย
             )
@@ -94,19 +96,17 @@ class PDFProcessor:
             return ""
 
     def get_embedding(self, text: str) -> Optional[List[float]]:
+        api_url = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_EMBEDDING_MODEL}"
+        headers = {}
+        if HUGGINGFACE_API_TOKEN:
+            headers["Authorization"] = f"Bearer {HUGGINGFACE_API_TOKEN}"
+        payload = {"inputs": text}
         try:
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://hipurino-datasheets.onrender.com",
-                "X-Title": "PDF Chatbot"
-            }
-            data = {"model": "text-embedding-ada-002", "input": text}
-            res = requests.post("https://openrouter.ai/api/v1/embeddings", headers=headers, json=data, timeout=15)
-            res.raise_for_status()
-            return res.json()['data'][0]['embedding']
+            response = requests.post(api_url, headers=headers, json=payload, timeout=15)
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
-            logger.error(f"Embedding error: {e}")
+            logger.error(f"Hugging Face Embedding error: {e}")
             return None
 
     def _populate_index(self):
