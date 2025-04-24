@@ -170,14 +170,14 @@ def query_openrouter(question: str, context: str) -> str:
     data = {
         "model": "deepseek/deepseek-r1:free",
         "messages": [
-            {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามจากข้อมูลที่ให้มาเท่านั้น ตอบให้สั้น กระชับ เข้าใจง่าย และเป็นภาษาไทยเท่านั้น"},
+            {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามจากข้อมูลที่ให้มาเท่านั้น หากมีข้อมูลสเปคของสินค้าในข้อมูลอ้างอิง ให้ตอบสเปคเหล่านั้น หากไม่มีหรือไม่แน่ใจ ให้แจ้งว่าไม่มีข้อมูลสเปค"},
             {"role": "user", "content": f"ข้อมูลอ้างอิง:\n{context}\n\nคำถาม: {question}\n\nคำตอบ:"}
         ],
         "temperature": 0.3
     }
     try:
         logger.info(f"Querying OpenRouter with question: '{question[:50]}...' and context length: {len(context)}")
-        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=15)
+        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=20)
         res.raise_for_status()
         response_data = res.json()
         logger.info(f"OpenRouter Response: {response_data}")
@@ -229,7 +229,8 @@ def handle_message(event):
             reply = "สวัสดีครับ/ค่ะ มีอะไรให้ผม/ดิฉันช่วยค้นหาจากข้อมูลในเอกสารได้บ้างครับ?"
         else:
             context = "\n\n".join(pdf_processor.search(user_msg))
-            logger.info(f"Context from Pinecone for query '{user_msg}':\n{context}")
+            logger.info(f"Context length for query '{user_msg}': {len(context)}")
+            logger.info(f"Context from Pinecone for query '{user_msg}':\n{context[:500]}...")
             reply = query_openrouter(user_msg, context) if context else "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
 
         messaging_api.reply_message_with_http_info(
