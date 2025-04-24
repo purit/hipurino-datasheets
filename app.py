@@ -99,20 +99,22 @@ class PDFProcessor:
 
     def get_embedding(self, text: str) -> Optional[List[float]]:
         try:
+            logger.info(f"Getting embedding for text: '{text[:50]}...'")
             response = self.co.embed(
                 texts=[text[:512]],
                 model=COHERE_EMBEDDING_MODEL
             )
             if response.embeddings and len(response.embeddings) > 0:
+                logger.info("Successfully got embedding.")
                 return response.embeddings[0]
             else:
                 logger.error(f"Cohere Embedding response format unexpected: {response}")
                 return None
-        except cohere.CohereAPIError as e:
-            logger.error(f"Cohere Embedding request error: {e}")
+        except cohere.CohereError as e:
+            logger.error(f"Cohere API error: {e}")
             return None
         except Exception as e:
-            logger.error(f"Cohere Embedding error: {e}")
+            logger.error(f"Cohere Embedding error: {type(e)}, {e}")
             return None
 
     def _populate_index(self):
@@ -141,11 +143,20 @@ class PDFProcessor:
         logger.info("PDF documents processed and indexed.")
 
     def search(self, query: str, top_k: int = 3) -> List[str]:
+        logger.info(f"Searching Pinecone for query: '{query}'")
         emb = self.get_embedding(query)
         if not emb:
+            logger.warning("Could not get embedding for query, returning empty search results.")
             return []
-        results = self.index.query(vector=emb, top_k=top_k, include_metadata=True)
-        return [m['metadata']['text'] for m in results.get('matches', []) if 'metadata' in m and 'text' in m['metadata']]
+        try:
+            results = self.index.query(vector=emb, top_k=top_k, include_metadata=True, namespace="pdf_documents")
+            matches = results.get('matches', [])
+            texts = [m['metadata']['text'] for m in matches if 'metadata' in m and 'text' in m['metadata']]
+            logger.info(f"Search results from Pinecone: {texts}")
+            return texts
+        except Exception as e:
+            logger.error(f"Error querying Pinecone: {e}")
+            return []
 
 pdf_processor = PDFProcessor()
 
@@ -165,12 +176,22 @@ def query_openrouter(question: str, context: str) -> str:
         "temperature": 0.3
     }
     try:
+        logger.info(f"Querying OpenRouter with question: '{question[:50]}...' and context length: {len(context)}")
         res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=15)
         res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
+        response_data = res.json()
+        logger.info(f"OpenRouter Response: {response_data}")
+        if response_data.get('choices'):
+            return response_data['choices'][0]['message']['content'].strip()
+        else:
+            logger.error(f"Invalid response format from OpenRouter: {response_data}")
+            return "ขออภัย เกิดข้อผิดพลาดในการประมวลผลจาก OpenRouter"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"OpenRouter request failed: {e}")
+        return "ขออภัย เกิดปัญหาการเชื่อมต่อกับ OpenRouter"
     except Exception as e:
         logger.error(f"OpenRouter error: {e}")
-        return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล"
+        return "ขออภัย เกิดข้อผิดพลาดในการประมวลผลจาก OpenRouter"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -179,7 +200,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.warning("Invalid signature")
+        logger.warning("Invalid signature detected")
         abort(400)
     except Exception as e:
         logger.error(f"Callback error: {e}")
@@ -208,6 +229,7 @@ def handle_message(event):
             reply = "สวัสดีครับ/ค่ะ มีอะไรให้ผม/ดิฉันช่วยค้นหาจากข้อมูลในเอกสารได้บ้างครับ?"
         else:
             context = "\n\n".join(pdf_processor.search(user_msg))
+            logger.info(f"Context from Pinecone for query '{user_msg}':\n{context}")
             reply = query_openrouter(user_msg, context) if context else "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
 
         messaging_api.reply_message_with_http_info(
@@ -216,7 +238,8 @@ def handle_message(event):
     except Exception as e:
         logger.error(f"Handle error: {e}")
         messaging_api.reply_message_with_http_info(
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาด")])
+            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาดในการประมวลผล")]
+            )
         )
 
 if __name__ == "__main__":
