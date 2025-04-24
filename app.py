@@ -168,7 +168,7 @@ def query_openrouter(question: str, context: str) -> str:
         "X-Title": "PDF Chatbot"
     }
     data = {
-        "model": "google/learnlm-1.5-pro-experimental:free",
+        "model": "deepseek/deepseek-v3-base:free",
         "messages": [
             {"role": "system", "content": "คุณเป็นผู้ช่วยที่ตอบคำถามสินค้า SPD Surge protection device แบรนด์ DEHN จากข้อมูลที่ให้มาเท่านั้น ตอบให้สั้นและกระชับได้ใจความที่สุด หากมีข้อมูลสเปคของสินค้าในข้อมูลอ้างอิง ให้ตอบสเปคเหล่านั้น หากไม่มีหรือไม่แน่ใจ ให้แจ้งว่าไม่มีข้อมูลสเปค"},
             {"role": "user", "content": f"ข้อมูลอ้างอิง:\n{context}\n\nคำถาม: {question}\n\nคำตอบ:"}
