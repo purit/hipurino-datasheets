@@ -1,6 +1,7 @@
-Flask
+flask
 requests
 line-bot-sdk >= 3.0.0
 gunicorn
-sentence-transformers
-supabase
+PyPDF2
+python-dotenv
+pinecone-client
