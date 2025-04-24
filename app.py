@@ -142,7 +142,7 @@ class PDFProcessor:
         self.cached_text = "\n".join(all_text)
         logger.info("PDF documents processed and indexed.")
 
-    def search(self, query: str, top_k: int = 3) -> List[str]:
+    def search(self, query: str, top_k: int = 1, context_length: int = 200) -> List[str]:
         logger.info(f"Searching Pinecone for query: '{query}'")
         emb = self.get_embedding(query)
         if not emb:
@@ -151,7 +151,7 @@ class PDFProcessor:
         try:
             results = self.index.query(vector=emb, top_k=top_k, include_metadata=True, namespace="pdf_documents")
             matches = results.get('matches', [])
-            texts = [m['metadata']['text'] for m in matches if 'metadata' in m and 'text' in m['metadata']]
+            texts = [m['metadata']['text'][:context_length] for m in matches if 'metadata' in m and 'text' in m['metadata']]
             logger.info(f"Search results from Pinecone: {texts}")
             return texts
         except Exception as e:
@@ -177,7 +177,7 @@ def query_openrouter(question: str, context: str) -> str:
     }
     try:
         logger.info(f"Querying OpenRouter with question: '{question[:50]}...' and context length: {len(context)}")
-        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=15)
+        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=20) # เพิ่ม timeout เป็น 20 วินาที
         res.raise_for_status()
         response_data = res.json()
         logger.info(f"OpenRouter Response: {response_data}")
@@ -229,7 +229,8 @@ def handle_message(event):
             reply = "สวัสดีครับ/ค่ะ มีอะไรให้ผม/ดิฉันช่วยค้นหาจากข้อมูลในเอกสารได้บ้างครับ?"
         else:
             context = "\n\n".join(pdf_processor.search(user_msg))
-            logger.info(f"Context from Pinecone for query '{user_msg}':\n{context}")
+            logger.info(f"Context length for query '{user_msg}': {len(context)}") # Log ความยาว Context
+            logger.info(f"Context from Pinecone for query '{user_msg}':\n{context[:500]}...") # Log ส่วนแรกของ Context
             reply = query_openrouter(user_msg, context) if context else "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
 
         messaging_api.reply_message_with_http_info(
