@@ -1,5 +1,5 @@
 Flask
-line-bot-sdk==3.0.0
+line-bot-sdk>3.0.0
 requests
 PyPDF2
 python-dotenv
