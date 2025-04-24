@@ -12,6 +12,7 @@ import PyPDF2
 from io import BytesIO
 from dotenv import load_dotenv
 import pinecone
+from pinecone import IndexSpec  # Import IndexSpec
 import time
 
 # Load environment variables
@@ -64,7 +65,12 @@ class PDFProcessor:
 
     def _connect_pinecone(self, pc_instance):
         if PINECONE_INDEX_NAME not in pc_instance.list_indexes().names():
-            pc_instance.create_index(PINECONE_INDEX_NAME, dimension=1536, metric="cosine")
+            index_spec = IndexSpec(
+                name=PINECONE_INDEX_NAME,
+                dimension=1536,
+                metric="cosine"
+            )
+            pc_instance.create_index(index_spec=index_spec)
             time.sleep(1)
             logger.info(f"Pinecone index '{PINECONE_INDEX_NAME}' created.")
         else:
