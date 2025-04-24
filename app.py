@@ -43,30 +43,20 @@ PDF_URLS = [
     "https://raw.githubusercontent.com/purit/hipurino-datasheets/main/pdfs/961125.pdf",
 ]
 
-# Validate required environment variables
 if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, OPENROUTER_API_KEY, PINECONE_API_KEY]):
     raise ValueError("Missing required environment variables")
 
-# Flask app setup
 app = Flask(__name__)
-
-# LINE API setup
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 api_client = ApiClient(configuration)
 messaging_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# Pinecone setup
 pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
 
 class PDFProcessor:
     def __init__(self):
         self.cached_text: Optional[str] = None
-        self.vector_index = None
-
-    def initialize_pinecone(self):
-        if PINECONE_INDEX_NAME not in pinecone.list_indexes():
-            pinecone.create_index(name=PINECONE_INDEX_NAME, dimension=1536, metric="cosine")
         self.vector_index = pinecone.Index(PINECONE_INDEX_NAME)
 
     def download_pdf(self, url: str) -> Optional[BytesIO]:
@@ -100,40 +90,14 @@ class PDFProcessor:
             logger.error(f"Embedding error: {e}")
             return None
 
-    def process_pdfs(self) -> str:
-        if self.cached_text:
-            return self.cached_text
-        all_text = []
-        for url in PDF_URLS:
-            stream = self.download_pdf(url)
-            if not stream:
-                continue
-            text = self.extract_text(stream)
-            if not text:
-                continue
-            chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
-            for i, chunk in enumerate(chunks):
-                emb = self.get_embedding(chunk)
-                if emb:
-                    self.vector_index.upsert([{
-                        "id": f"{url.split('/')[-1]}-{i}",
-                        "values": emb,
-                        "metadata": {"text": chunk, "source": url}
-                    }])
-            all_text.append(text)
-        self.cached_text = "\n".join(all_text)
-        return self.cached_text
-
     def search(self, query: str, top_k: int = 3) -> List[str]:
         emb = self.get_embedding(query)
         if not emb:
             return []
         results = self.vector_index.query(vector=emb, top_k=top_k, include_metadata=True)
-        return [m['metadata']['text'] for m in results.get('matches', [])]
+        return [m['metadata']['text'] for m in results.get('matches', []) if 'metadata' in m and 'text' in m['metadata']]
 
 pdf_processor = PDFProcessor()
-pdf_processor.initialize_pinecone()
-
 
 def query_openrouter(question: str, context: str) -> str:
     headers = {
@@ -158,7 +122,6 @@ def query_openrouter(question: str, context: str) -> str:
         logger.error(f"OpenRouter error: {e}")
         return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล"
 
-
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -172,7 +135,6 @@ def callback():
         logger.error(f"Callback error: {e}")
         abort(500)
     return 'OK'
-
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -207,7 +169,5 @@ def handle_message(event):
             ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาด")])
         )
 
-
 if __name__ == "__main__":
-    pdf_processor.process_pdfs()
     app.run(host='0.0.0.0', port=5000)
