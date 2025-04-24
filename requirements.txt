@@ -5,3 +5,4 @@ PyPDF2
 python-dotenv
 pinecone
 gunicorn
+cohere
