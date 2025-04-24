@@ -97,7 +97,9 @@ class PDFProcessor:
         try:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://hipurino-datasheets.onrender.com",
+                "X-Title": "PDF Chatbot"
             }
             data = {"model": "text-embedding-ada-002", "input": text}
             res = requests.post("https://openrouter.ai/api/v1/embeddings", headers=headers, json=data, timeout=15)
@@ -145,7 +147,7 @@ def query_openrouter(question: str, context: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://your-render-app-url.onrender.com",
+        "HTTP-Referer": "https://hipurino-datasheets.onrender.com",
         "X-Title": "PDF Chatbot"
     }
     data = {
