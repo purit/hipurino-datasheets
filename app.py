@@ -142,7 +142,7 @@ class PDFProcessor:
         self.cached_text = "\n".join(all_text)
         logger.info("PDF documents processed and indexed.")
 
-    def search(self, query: str, top_k: int = 1, context_length: int = 500) -> List[str]:
+    def search(self, query: str, top_k: int = 2, context_length: int = 250) -> List[str]:
         logger.info(f"Searching Pinecone for query: '{query}'")
         emb = self.get_embedding(query)
         if not emb:
