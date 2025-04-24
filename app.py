@@ -11,7 +11,7 @@ from typing import Optional, List
 import PyPDF2
 from io import BytesIO
 from dotenv import load_dotenv
-from pinecone import Pinecone
+from pinecone import Pinecone, IndexSpec  # Import IndexSpec
 import time
 
 # โหลด environment variables
@@ -63,20 +63,24 @@ class PDFProcessor:
     def __init__(self):
         self.cached_text: Optional[str] = None
         self.namespace = "pdf_documents"
-        
+
         # ตรวจสอบและสร้าง index หากจำเป็น
         if PINECONE_INDEX_NAME not in pc.list_indexes().names():
-            pc.create_index(
+            index_spec = IndexSpec(
                 name=PINECONE_INDEX_NAME,
-                dimension=1536,  # ต้องตรงกับขนาด embedding ที่ใช้
+                dimension=1536,  # ขนาดของ embedding vector ที่ได้จาก text-embedding-ada-002
                 metric="cosine"
             )
+            pc.create_index(index_spec=index_spec)
+            logger.info(f"Pinecone index '{PINECONE_INDEX_NAME}' created.")
             # รอให้ index พร้อมใช้งาน
             time.sleep(1)
-        
+        else:
+            logger.info(f"Pinecone index '{PINECONE_INDEX_NAME}' already exists.")
+
         self.vector_index = pc.Index(PINECONE_INDEX_NAME)
         self.process_pdfs()  # โหลดและประมวลผล PDFs เมื่อเริ่มต้น
-    
+
     def download_pdf(self, url: str) -> Optional[BytesIO]:
         """ดาวน์โหลด PDF จาก URL"""
         try:
@@ -86,7 +90,7 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error downloading PDF from {url}: {str(e)}")
             return None
-    
+
     def extract_text_from_pdf(self, pdf_stream: BytesIO) -> str:
         """ดึงข้อความจาก PDF"""
         try:
@@ -96,19 +100,19 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error extracting text from PDF: {str(e)}")
             return ""
-    
+
     def get_embedding(self, text: str) -> List[float]:
         """รับ embedding vector สำหรับข้อความโดยใช้ OpenRouter"""
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json"
         }
-        
+
         data = {
             "model": "text-embedding-ada-002",
             "input": text
         }
-        
+
         try:
             response = requests.post(
                 "https://openrouter.ai/api/v1/embeddings",
@@ -121,24 +125,24 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error getting embedding: {str(e)}")
             return None
-    
+
     def process_pdfs(self):
         """ประมวลผลและเก็บ PDF ทั้งหมดใน Pinecone"""
         all_text = []
-        
+
         for pdf_url in PDF_URLS:
             try:
                 pdf_stream = self.download_pdf(pdf_url)
                 if not pdf_stream:
                     continue
-                    
+
                 text = self.extract_text_from_pdf(pdf_stream)
                 if not text:
                     continue
-                
-                # แบ่งข้อความเป็น chunks (ประมาณ 500-1000 คำต่อ chunk)
+
+                # แบ่งข้อความเป็น chunks (ประมาณ 1000 ตัวอักษรต่อ chunk)
                 chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
-                
+
                 for i, chunk in enumerate(chunks):
                     embedding = self.get_embedding(chunk)
                     if embedding:
@@ -154,28 +158,29 @@ class PDFProcessor:
                             }],
                             namespace=self.namespace
                         )
-                
+                logger.info(f"Successfully processed and indexed: {pdf_url}")
+
                 all_text.append(text)
-                
+
             except Exception as e:
                 logger.error(f"Error processing {pdf_url}: {str(e)}")
                 continue
-        
+
         self.cached_text = "\n".join(all_text)
-    
+
     def search_relevant_text(self, query: str, top_k: int = 3) -> List[str]:
         """ค้นหาข้อความที่เกี่ยวข้องใน Pinecone"""
         query_embedding = self.get_embedding(query)
         if not query_embedding:
             return []
-            
+
         results = self.vector_index.query(
             namespace=self.namespace,
             vector=query_embedding,
             top_k=top_k,
             include_metadata=True
         )
-        
+
         return [match['metadata']['text'] for match in results['matches']]
 
 # สร้าง instance ของ PDFProcessor
@@ -271,7 +276,7 @@ def handle_message(event):
                 # ค้นหาข้อความที่เกี่ยวข้องจาก Pinecone
                 relevant_texts = pdf_processor.search_relevant_text(user_message)
                 context = "\n\n".join(relevant_texts)
-                
+
                 if not context:
                     reply = "ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ"
                 else:
