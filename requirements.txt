@@ -3,5 +3,5 @@ line-bot-sdk>3.0.0
 requests
 PyPDF2
 python-dotenv
-pinecone-client>2.0.0  # ระบุเวอร์ชันที่รองรับการ Initialize แบบใหม่
+pinecone
 gunicorn
