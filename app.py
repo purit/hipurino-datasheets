@@ -97,8 +97,10 @@ class PDFProcessor:
 
     def get_embedding(self, text: str) -> Optional[List[float]]:
         api_url = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_EMBEDDING_MODEL}"
-        headers = {"Content-Type": "application/json"} # นำ Authorization Header ออกชั่วคราว
-        payload = {"inputs": text[:512]} # จำกัดความยาว Input เป็น 512 ตัวอักษรแรก
+        headers = {"Content-Type": "application/json"}
+        if HUGGINGFACE_API_TOKEN:
+            headers["Authorization"] = f"Bearer {HUGGINGFACE_API_TOKEN}"
+        payload = {"inputs": text[:512]} # จำกัดความยาว Input ไว้
         try:
             response = requests.post(api_url, headers=headers, json=payload, timeout=15)
             response.raise_for_status()
